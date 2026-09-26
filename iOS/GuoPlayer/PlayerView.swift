@@ -35,6 +35,7 @@ struct PlayerView: View {
     @State private var duration: Double = 0
     @State private var timeObserver: Any?
     @State private var endObserver: NSObjectProtocol?
+    @State private var failureObserver: NSObjectProtocol?
     @State private var statusObserver: NSKeyValueObservation?
     @State private var startupTask: Task<Void, Never>?
     @State private var attemptedFallback = false
@@ -134,7 +135,7 @@ struct PlayerView: View {
         let resume = position > 0 ? position : Double(current.userData?.playbackPositionTicks ?? 0) / 10_000_000
         if resume > 10 { player.seek(to: CMTime(seconds: resume, preferredTimescale: 600)) }
         player.play()
-        statusObserver = playerItem.observe(\.status, options: [.new]) { observed, _ in
+        statusObserver = playerItem.observe(\.status, options: [.initial, .new]) { observed, _ in
             DispatchQueue.main.async {
                 guard player.currentItem === playerItem else { return }
                 switch observed.status {
@@ -164,6 +165,12 @@ struct PlayerView: View {
         endObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: playerItem, queue: .main) { _ in
             report("/Stopped")
             advance()
+        }
+        if let failureObserver { NotificationCenter.default.removeObserver(failureObserver) }
+        failureObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemFailedToPlayToEndTime, object: playerItem, queue: .main) { notification in
+            guard player.currentItem === playerItem else { return }
+            let message = (notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error)?.localizedDescription
+            handlePlaybackFailure(message)
         }
         Task { while !Task.isCancelled && player.currentItem === playerItem { try? await Task.sleep(for: .seconds(10)); if player.currentItem === playerItem { report("/Progress") } } }
     }
@@ -199,6 +206,7 @@ struct PlayerView: View {
         player.pause(); player.replaceCurrentItem(with: nil)
         if let timeObserver { player.removeTimeObserver(timeObserver); self.timeObserver = nil }
         if let endObserver { NotificationCenter.default.removeObserver(endObserver); self.endObserver = nil }
+        if let failureObserver { NotificationCenter.default.removeObserver(failureObserver); self.failureObserver = nil }
     }
     private func close() { stop(); dismiss() }
 }

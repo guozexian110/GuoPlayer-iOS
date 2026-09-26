@@ -344,6 +344,7 @@ struct ImmersiveDetailView: View {
     @State private var showingSourcePicker = false
     @State private var showingEpisodeSourcePicker = false
     @State private var episodeChoices: [MediaItem] = []
+    @State private var pendingPlayback: MediaItem?
     @State private var playing: MediaItem?
     @State private var preferredSourceId: String?
 
@@ -405,8 +406,8 @@ struct ImmersiveDetailView: View {
         .onAppear { chrome.hidesNavigation = true }
         .onDisappear { chrome.hidesNavigation = false }
         .task { await loadDetails() }
-        .sheet(isPresented: $showingSourcePicker) { sourcePicker }
-        .sheet(isPresented: $showingEpisodeSourcePicker) { episodeSourcePicker }
+        .sheet(isPresented: $showingSourcePicker, onDismiss: startPendingPlayback) { sourcePicker }
+        .sheet(isPresented: $showingEpisodeSourcePicker, onDismiss: startPendingPlayback) { episodeSourcePicker }
         .fullScreenCover(item: $playing) { item in
             PlayerView(item: item, playlist: episodes.filter { $0.serverId == item.serverId }
                 .sorted { ($0.parentIndexNumber ?? 0, $0.indexNumber ?? 0) < ($1.parentIndexNumber ?? 0, $1.indexNumber ?? 0) }, preferredSourceId: preferredSourceId)
@@ -510,7 +511,7 @@ struct ImmersiveDetailView: View {
                         Button {
                             showingSourcePicker = false
                             preferredSourceId = choice.source.id
-                            playing = choice.item
+                            pendingPlayback = choice.item
                         } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 4) {
@@ -528,7 +529,7 @@ struct ImmersiveDetailView: View {
                         Button {
                             showingSourcePicker = false
                             if group.primary.isSeries { selectedServer = item.serverId }
-                            else { preferredSourceId = nil; playing = item }
+                            else { preferredSourceId = nil; pendingPlayback = item }
                         } label: {
                             HStack {
                                 Label(store.server(for: item)?.name ?? "Emby", systemImage: "server.rack")
@@ -614,7 +615,7 @@ struct ImmersiveDetailView: View {
                 Button {
                     showingEpisodeSourcePicker = false
                     preferredSourceId = nil
-                    playing = episode
+                    pendingPlayback = episode
                 } label: {
                     HStack {
                         Label(store.server(for: episode)?.name ?? "Emby", systemImage: "server.rack")
@@ -665,6 +666,13 @@ struct ImmersiveDetailView: View {
         } else {
             preferredSourceId = nil
             playing = group.primary
+        }
+    }
+
+    private func startPendingPlayback() {
+        if let pendingPlayback {
+            self.pendingPlayback = nil
+            playing = pendingPlayback
         }
     }
 

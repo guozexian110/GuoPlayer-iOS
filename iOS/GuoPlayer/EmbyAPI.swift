@@ -92,24 +92,35 @@ final class EmbyAPI {
         guard backdrop ? !item.backdropImageTags.isEmpty : item.imageTags["Primary"] != nil else { return nil }
         return url(server, "Items/\(item.id)/Images/" + (backdrop ? "Backdrop/0" : "Primary"), query: ["maxWidth": backdrop ? "1400" : "450", "api_key": token])
     }
-    func streamURL(_ server: EmbyServer, token: String, item: MediaItem, source: PlaybackSource, forceTranscode: Bool, audio: Int? = nil, subtitle: Int? = nil) -> URL {
-        if !forceTranscode && source.supportsDirectPlay != true && source.canDirectStreamOnApple,
+    private func playbackURL(_ server: EmbyServer, value: String, token: String, audio: Int?, subtitle: Int?) -> URL? {
+        let root = server.baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let apiRoot = root.lowercased().hasSuffix("/emby") ? root : root + "/emby"
+        let raw: String
+        if let absolute = URL(string: value), absolute.scheme != nil { raw = value }
+        else if value.hasPrefix("/") {
+            let origin = "\(server.baseURL.scheme ?? "https")://\(server.baseURL.host ?? "")\(server.baseURL.port.map { ":\($0)" } ?? "")"
+            raw = value.lowercased().hasPrefix("/emby/") ? origin + value : apiRoot + value
+        } else { raw = apiRoot + "/" + value }
+        guard var components = URLComponents(string: raw) else { return nil }
+        var query = components.queryItems ?? []
+        if !query.contains(where: { $0.name.lowercased() == "api_key" }) { query.append(URLQueryItem(name: "api_key", value: token)) }
+        if let audio { query.removeAll { $0.name == "AudioStreamIndex" }; query.append(URLQueryItem(name: "AudioStreamIndex", value: "\(audio)")) }
+        if let subtitle { query.removeAll { $0.name == "SubtitleStreamIndex" }; query.append(URLQueryItem(name: "SubtitleStreamIndex", value: "\(subtitle)")) }
+        components.queryItems = query
+        return components.url
+    }
+    func streamURL(_ server: EmbyServer, token: String, item: MediaItem, source: PlaybackSource, forceTranscode: Bool, audio: Int? = nil, subtitle: Int? = nil, sessionId: String? = nil, preferServerTranscodingURL: Bool = true) -> URL {
+        if !forceTranscode && !source.canDirectPlayOnApple && source.canDirectStreamOnApple,
            let value = source.directStreamUrl {
-            let raw = value.hasPrefix("http") ? value : server.baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/" + value.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            var components = URLComponents(string: raw)!
-            var query = components.queryItems ?? []
-            query.append(URLQueryItem(name: "api_key", value: token))
-            components.queryItems = query
-            return components.url!
+            if let resolved = playbackURL(server, value: value, token: token, audio: audio, subtitle: subtitle) { return resolved }
         }
-        if forceTranscode, let value = source.transcodingUrl, let relative = URL(string: value, relativeTo: server.baseURL)?.absoluteURL {
-            var c = URLComponents(url: relative, resolvingAgainstBaseURL: false)!
-            var q = c.queryItems ?? []
-            q.append(URLQueryItem(name: "api_key", value: token)); c.queryItems = q
-            return c.url!
+        if forceTranscode && preferServerTranscodingURL, let value = source.transcodingUrl,
+           let resolved = playbackURL(server, value: value, token: token, audio: audio, subtitle: subtitle) {
+            return resolved
         }
         if forceTranscode {
-            var query = ["api_key": token, "MediaSourceId": source.id, "VideoCodec": "h264", "AudioCodec": "aac", "MaxStreamingBitrate": "40000000", "TranscodingContainer": "ts", "TranscodingProtocol": "hls"]
+            var query = ["api_key": token, "MediaSourceId": source.id, "VideoCodec": "h264", "AudioCodec": "aac", "MaxStreamingBitrate": "40000000", "TranscodingContainer": "ts", "TranscodingProtocol": "hls", "RequireAvc": "true"]
+            if let sessionId { query["PlaySessionId"] = sessionId }
             if let audio { query["AudioStreamIndex"] = "\(audio)" }
             if let subtitle { query["SubtitleStreamIndex"] = "\(subtitle)" }
             return url(server, "Videos/\(item.id)/master.m3u8", query: query)

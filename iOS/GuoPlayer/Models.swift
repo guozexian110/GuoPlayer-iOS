@@ -162,6 +162,13 @@ struct PlaybackSource: Decodable, Identifiable {
         guard supportsDirectStream == true, let value = directStreamUrl?.lowercased() else { return false }
         return value.contains(".m3u8") || value.contains(".mp4") || value.contains(".mov")
     }
+    var canDirectPlayOnApple: Bool {
+        guard supportsDirectPlay == true, ["mp4", "m4v", "mov"].contains(container?.lowercased() ?? "") else { return false }
+        let video = mediaStreams.filter { $0.type == "Video" }.compactMap { $0.codec?.lowercased() }
+        let audio = mediaStreams.filter { $0.type == "Audio" }.compactMap { $0.codec?.lowercased() }
+        return video.allSatisfy { ["h264", "hevc", "h265"].contains($0) }
+            && audio.allSatisfy { ["aac", "mp3", "ac3", "eac3", "alac"].contains($0) }
+    }
 }
 struct MediaStream: Decodable, Identifiable {
     let index: Int

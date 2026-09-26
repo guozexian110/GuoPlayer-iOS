@@ -35,7 +35,10 @@ struct PlayerView: View {
     @State private var duration: Double = 0
     @State private var timeObserver: Any?
     @State private var endObserver: NSObjectProtocol?
+    @State private var statusObserver: NSKeyValueObservation?
+    @State private var startupTask: Task<Void, Never>?
     @State private var attemptedFallback = false
+    @State private var attemptedAlternateHLS = false
     init(item: MediaItem, playlist: [MediaItem], preferredSourceId: String? = nil) {
         self.item = item; self.playlist = playlist; self.preferredSourceId = preferredSourceId; _current = State(initialValue: item)
     }
@@ -45,10 +48,19 @@ struct PlayerView: View {
             VStack(spacing: 12) {
                 HStack { Button { close() } label: { Label("返回", systemImage: "chevron.down") }; Spacer(); Text(current.name).lineLimit(1); Spacer(); Image(systemName: "airplayvideo") }
                     .font(.subheadline.bold()).padding(.horizontal)
-                NativePlayer(player: player).frame(maxWidth: .infinity, maxHeight: .infinity)
-                if loading { ProgressView("正在读取播放信息") }
-                if let error {
-                    VStack { Text(error).foregroundStyle(.red); Button("尝试 Emby 转码") { forceTranscode = true; startPlayback() }.buttonStyle(.borderedProminent) }
+                ZStack {
+                    NativePlayer(player: player).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if loading { ProgressView("正在连接视频").tint(.cyan).padding(18).background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 12)) }
+                    if let error {
+                        VStack(spacing: 12) {
+                            Image(systemName: "exclamationmark.triangle").font(.title2)
+                            Text(error).multilineTextAlignment(.center)
+                            Button("尝试 Emby 转码") { forceTranscode = true; attemptedAlternateHLS = false; startPlayback() }
+                                .buttonStyle(.borderedProminent)
+                        }
+                        .padding(20).frame(maxWidth: 310)
+                        .background(.black.opacity(0.88), in: RoundedRectangle(cornerRadius: 14))
+                    }
                 }
                 VStack(spacing: 10) {
                     Slider(value: Binding(get: { position }, set: { position = $0 }), in: 0...max(duration, 1), onEditingChanged: { editing in if !editing { player.seek(to: CMTime(seconds: position, preferredTimescale: 600)); report("/Progress") } })
@@ -59,7 +71,7 @@ struct PlayerView: View {
                         Button { player.seek(to: CMTime(seconds: position + 10, preferredTimescale: 600)) } label: { Image(systemName: "goforward.10") }
                         Menu { ForEach([0.5, 1.0, 1.25, 1.5, 2.0], id: \.self) { value in Button("\(value.formatted())×") { speed = Float(value); player.rate = speed } } } label: { Text("\(speed.formatted())×") }
                         if let info {
-                            Menu { ForEach(info.mediaSources) { candidate in Button(candidate.container?.uppercased() ?? candidate.id) { source = candidate; startPlayback() } } } label: { Image(systemName: "server.rack") }
+                            Menu { ForEach(info.mediaSources) { candidate in Button(candidate.container?.uppercased() ?? candidate.id) { source = candidate; attemptedFallback = false; attemptedAlternateHLS = false; forceTranscode = !(candidate.canDirectPlayOnApple || candidate.canDirectStreamOnApple); startPlayback() } } } label: { Image(systemName: "server.rack") }
                         }
                         if nextEpisode != nil { Button { advance() } label: { Image(systemName: "forward.end.fill") } }
                     }.font(.title3).buttonStyle(.plain)
@@ -67,17 +79,17 @@ struct PlayerView: View {
                         Menu {
                             Button("自动") { chosenAudio = nil; startPlayback() }
                             ForEach(source?.mediaStreams.filter { $0.type == "Audio" } ?? []) { track in
-                                Button(track.displayTitle ?? track.language ?? "音轨 \(track.index)") { chosenAudio = track.index; startPlayback() }
+                                Button(track.displayTitle ?? track.language ?? "音轨 \(track.index)") { chosenAudio = track.index; forceTranscode = true; attemptedAlternateHLS = false; startPlayback() }
                             }
                         } label: { Label("音轨", systemImage: "waveform") }
                         Menu {
                             Button("关闭") { chosenSubtitle = -1; startPlayback() }
                             Button("自动") { chosenSubtitle = nil; startPlayback() }
                             ForEach(source?.mediaStreams.filter { $0.type == "Subtitle" } ?? []) { track in
-                                Button(track.displayTitle ?? track.language ?? "字幕 \(track.index)") { chosenSubtitle = track.index; forceTranscode = true; startPlayback() }
+                                Button(track.displayTitle ?? track.language ?? "字幕 \(track.index)") { chosenSubtitle = track.index; forceTranscode = true; attemptedAlternateHLS = false; startPlayback() }
                             }
                         } label: { Label("字幕", systemImage: "captions.bubble") }
-                        Button(forceTranscode ? "转码中" : "切换转码") { forceTranscode.toggle(); startPlayback() }
+                        Button(forceTranscode ? "转码中" : "切换转码") { forceTranscode.toggle(); attemptedFallback = false; attemptedAlternateHLS = false; startPlayback() }
                     }.font(.caption).buttonStyle(.bordered)
                 }.padding(.horizontal, 18).padding(.bottom, 10)
             }
@@ -103,44 +115,72 @@ struct PlayerView: View {
             let result = try await store.api.playback(server, token: token, item: current)
             guard let first = preferredSourceId.flatMap({ selected in result.mediaSources.first(where: { $0.id == selected }) }) ?? result.mediaSources.first else { throw EmbyError.message("服务器没有可播放片源") }
             info = result; source = first
-            let container = first.container?.lowercased() ?? ""
-            forceTranscode = !((first.supportsDirectPlay == true && ["mp4", "m4v", "mov"].contains(container)) || first.canDirectStreamOnApple)
+            forceTranscode = !(first.canDirectPlayOnApple || first.canDirectStreamOnApple)
             startPlayback()
-        } catch { self.error = error.localizedDescription }
-        loading = false
+        } catch { self.error = error.localizedDescription; loading = false }
     }
     private func startPlayback() {
         guard let server = store.server(for: current), let token = TokenVault.read(server.id), let source else { return }
+        startupTask?.cancel()
+        statusObserver?.invalidate()
+        statusObserver = nil
+        loading = true
+        error = nil
         report("/Stopped")
-        let url = store.api.streamURL(server, token: token, item: current, source: source, forceTranscode: forceTranscode, audio: chosenAudio, subtitle: chosenSubtitle)
+        let url = store.api.streamURL(server, token: token, item: current, source: source, forceTranscode: forceTranscode, audio: chosenAudio, subtitle: chosenSubtitle, sessionId: info?.playSessionId, preferServerTranscodingURL: !attemptedAlternateHLS)
         let asset = AVURLAsset(url: url)
         let playerItem = AVPlayerItem(asset: asset)
         player.replaceCurrentItem(with: playerItem)
         let resume = position > 0 ? position : Double(current.userData?.playbackPositionTicks ?? 0) / 10_000_000
         if resume > 10 { player.seek(to: CMTime(seconds: resume, preferredTimescale: 600)) }
-        player.play(); player.rate = speed
+        player.play()
+        statusObserver = playerItem.observe(\.status, options: [.new]) { observed, _ in
+            DispatchQueue.main.async {
+                guard player.currentItem === playerItem else { return }
+                switch observed.status {
+                case .readyToPlay:
+                    loading = false
+                    player.rate = speed
+                    report("")
+                case .failed:
+                    handlePlaybackFailure(observed.error?.localizedDescription)
+                default: break
+                }
+            }
+        }
+        startupTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(20))
+            guard !Task.isCancelled, player.currentItem === playerItem,
+                  loading || player.timeControlStatus == .waitingToPlayAtSpecifiedRate else { return }
+            handlePlaybackFailure("视频连接超时")
+        }
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1, preferredTimescale: 2), queue: .main) { time in
             position = time.seconds.isFinite ? time.seconds : 0
             let total = player.currentItem?.duration.seconds ?? 0
             duration = total.isFinite ? total : 0
-            if player.currentItem === playerItem && playerItem.status == .failed {
-                if !forceTranscode && !attemptedFallback {
-                    attemptedFallback = true
-                    forceTranscode = true
-                    startPlayback()
-                } else {
-                    error = playerItem.error?.localizedDescription ?? "播放失败，请检查转码权限或切换片源"
-                }
-            }
         }
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: playerItem, queue: .main) { _ in
             report("/Stopped")
             advance()
         }
-        report("")
         Task { while !Task.isCancelled && player.currentItem === playerItem { try? await Task.sleep(for: .seconds(10)); if player.currentItem === playerItem { report("/Progress") } } }
+    }
+    private func handlePlaybackFailure(_ detail: String?) {
+        startupTask?.cancel()
+        loading = false
+        if !forceTranscode && !attemptedFallback {
+            attemptedFallback = true
+            forceTranscode = true
+            startPlayback()
+        } else if forceTranscode && !attemptedAlternateHLS && source?.transcodingUrl != nil {
+            attemptedAlternateHLS = true
+            startPlayback()
+        } else {
+            player.pause()
+            error = "播放失败：\(detail ?? "服务器未返回可播放的视频")。请检查服务器转码权限或更换片源。"
+        }
     }
     private func report(_ phase: String) {
         guard let server = store.server(for: current), let token = TokenVault.read(server.id), let source else { return }
@@ -150,10 +190,12 @@ struct PlayerView: View {
     }
     private func advance() {
         guard let next = nextEpisode else { return }
-        report("/Stopped"); current = next; info = nil; source = nil; position = 0; attemptedFallback = false; Task { await prepare() }
+        report("/Stopped"); current = next; info = nil; source = nil; position = 0; attemptedFallback = false; attemptedAlternateHLS = false; Task { await prepare() }
     }
     private func stop() {
         report("/Stopped")
+        startupTask?.cancel(); startupTask = nil
+        statusObserver?.invalidate(); statusObserver = nil
         player.pause(); player.replaceCurrentItem(with: nil)
         if let timeObserver { player.removeTimeObserver(timeObserver); self.timeObserver = nil }
         if let endObserver { NotificationCenter.default.removeObserver(endObserver); self.endObserver = nil }

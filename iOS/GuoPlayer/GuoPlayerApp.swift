@@ -23,16 +23,32 @@ struct RootView: View {
     @EnvironmentObject var store: AppStore
     @StateObject private var chrome = AppChrome()
     var body: some View {
-        ZStack(alignment: .bottom) {
-            Color(red: 0.035, green: 0.065, blue: 0.10).ignoresSafeArea()
-            Group {
-                switch chrome.selectedTab {
-                case 1: NavigationStack { LibraryView() }
-                case 2: NavigationStack { SearchView() }
-                default: NavigationStack { ImmersiveDiscoverView() }
+        GeometryReader { geometry in
+            ZStack {
+                Color(red: 0.035, green: 0.065, blue: 0.10).ignoresSafeArea()
+                Group {
+                    switch chrome.selectedTab {
+                    case 1: NavigationStack { LibraryView() }
+                    case 2: NavigationStack { SearchView() }
+                    default: NavigationStack { ImmersiveDiscoverView() }
+                    }
                 }
             }
-            if !chrome.hidesNavigation { FloatingNavigationBar() }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if !chrome.hidesNavigation {
+                    FloatingNavigationBar()
+                        .background(Color(red: 0.035, green: 0.065, blue: 0.10).ignoresSafeArea(edges: .bottom))
+                }
+            }
+            .simultaneousGesture(DragGesture(minimumDistance: 60).onEnded { value in
+                let horizontal = value.translation.width
+                guard abs(horizontal) > abs(value.translation.height) * 1.5 else { return }
+                if horizontal < -80 && value.startLocation.x > geometry.size.width - 32 {
+                    chrome.selectedTab = min(2, chrome.selectedTab + 1)
+                } else if horizontal > 80 && value.startLocation.x < 32 {
+                    chrome.selectedTab = max(0, chrome.selectedTab - 1)
+                }
+            })
         }
         .environmentObject(chrome)
         .sheet(isPresented: $chrome.showingSettings) {

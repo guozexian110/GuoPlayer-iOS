@@ -24,6 +24,8 @@ jobs:
           python3 iOS/tools/validate_project.py
           swiftc iOS/GuoPlayer/Models.swift iOS/Tests/AggregationSmoke.swift -o "$RUNNER_TEMP/aggregation-smoke"
           "$RUNNER_TEMP/aggregation-smoke"
+          swiftc iOS/GuoPlayer/Models.swift iOS/GuoPlayer/EmbyAPI.swift iOS/Tests/PlaybackSmoke.swift -o "$RUNNER_TEMP/playback-smoke"
+          "$RUNNER_TEMP/playback-smoke"
           xcodebuild -project iOS/GuoPlayer.xcodeproj -scheme GuoPlayer -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/guoplayer-simulator" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
       - name: Build unsigned iPhone and iPad app
         run: |
@@ -35,8 +37,8 @@ jobs:
           import pathlib, plistlib, sys
           app = pathlib.Path(sys.argv[1])
           info = plistlib.loads((app / 'Info.plist').read_bytes())
-          assert info['CFBundleShortVersionString'] == '1.1.0'
-          assert info['CFBundleVersion'] == '2'
+          assert info['CFBundleShortVersionString'] == '1.1.1'
+          assert info['CFBundleVersion'] == '3'
           assert info['UILaunchStoryboardName'] == 'LaunchScreen'
           assert info['UIDeviceFamily'] == [1, 2]
           assert info['CFBundleIcons']['CFBundlePrimaryIcon']['CFBundleIconName'] == 'AppIcon'

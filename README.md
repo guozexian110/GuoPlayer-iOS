@@ -8,6 +8,8 @@
 
 发现页优先显示媒体自身的 Emby 背景与海报。用户需有权访问自己的服务器内容。为支持用户自行输入 LAN HTTP 地址，Info.plist 放开了 ATS；建议远程服务器使用 HTTPS。播放与图片 URL 含 Emby Token，是 AVPlayer 无法统一附带 Emby 自定义请求头时的兼容方式；请勿共享含令牌的 URL。
 
+界面采用 GuoPlayer 自己的蓝青 Logo，参考用户录屏中的页面分布：全屏背景 Banner、横向继续观看和推荐媒体行、分类与服务器卡片、悬浮底栏，以及详情页的评分、画质筛选、片源卡片和演职人员区。影片图片和文字只取自用户添加的 Emby 服务器。iOS 启动屏与 AppIcon 已配置；[最新 Actions 构建](https://github.com/guozexian110/GuoPlayer-iOS/actions/runs/36241543773)通过 iPhone 与 iPad 模拟器启动截图验证，截图可在该运行的 `GuoPlayer-simulator-screenshots` Artifact 下载。布局会随可用屏幕宽度调整，最低系统要求仍为 iOS/iPadOS 17。
+
 ## GitHub Actions：获取未签名 IPA
 
 仓库地址：[guozexian110/GuoPlayer-iOS](https://github.com/guozexian110/GuoPlayer-iOS)。在仓库 **Actions → iOS unsigned build → Run workflow**，或推送 `iOS/` 改动触发。构建成功后，在该次运行页面底部 **Artifacts → GuoPlayer-unsigned-ipa** 下载压缩包；其中是 `GuoPlayer-unsigned.ipa`。IPA 由 `Payload/GuoPlayer.app` 打包，不含签名。2026-09-26 的 GitHub Hosted macOS 构建已通过模拟器 Debug 和设备 Release 编译、静态检查与聚合逻辑测试；IPA 的 ZIP 结构、Bundle ID 和无签名状态已检查。

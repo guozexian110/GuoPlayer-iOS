@@ -31,6 +31,17 @@ jobs:
           xcodebuild -project iOS/GuoPlayer.xcodeproj -scheme GuoPlayer -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/guoplayer-device" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
           APP="$RUNNER_TEMP/guoplayer-device/Build/Products/Release-iphoneos/GuoPlayer.app"
           test -f "$APP/GuoPlayer"
+          python3 - "$APP" <<'PY'
+          import pathlib, plistlib, sys
+          app = pathlib.Path(sys.argv[1])
+          info = plistlib.loads((app / 'Info.plist').read_bytes())
+          assert info['UILaunchStoryboardName'] == 'LaunchScreen'
+          assert info['UIDeviceFamily'] == [1, 2]
+          assert info['CFBundleIcons']['CFBundlePrimaryIcon']['CFBundleIconName'] == 'AppIcon'
+          assert (app / 'Assets.car').exists()
+          assert (app / 'LaunchScreen.storyboardc').exists()
+          print('iPhone/iPad launch screen and app icon: PASS')
+          PY
           if codesign -dv "$APP" >/dev/null 2>&1; then echo 'Expected an unsigned app' >&2; exit 1; fi
           mkdir -p "$RUNNER_TEMP/guoplayer-ipa/Payload"
           ditto "$APP" "$RUNNER_TEMP/guoplayer-ipa/Payload/GuoPlayer.app"

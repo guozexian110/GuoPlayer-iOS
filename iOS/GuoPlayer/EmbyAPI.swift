@@ -63,7 +63,7 @@ final class EmbyAPI {
         return LoginResult(userId: id, token: token, serverName: publicInfo?["ServerName"] as? String ?? "Emby")
     }
     func items(_ server: EmbyServer, token: String, parentId: String? = nil, search: String? = nil, types: String = "Movie,Series", limit: Int = 200, start: Int = 0, sort: String = "DateCreated") async throws -> [MediaItem] {
-        var query = ["Recursive": "true", "IncludeItemTypes": types, "Fields": "ProviderIds,Overview,DateCreated,MediaSources,UserData,RunTimeTicks", "SortBy": sort, "SortOrder": "Descending", "Limit": "\(limit)", "StartIndex": "\(start)"]
+        var query = ["Recursive": "true", "IncludeItemTypes": types, "Fields": "ProviderIds,Overview,DateCreated,MediaSources,UserData,RunTimeTicks,People", "SortBy": sort, "SortOrder": "Descending", "Limit": "\(limit)", "StartIndex": "\(start)"]
         if let parentId { query["ParentId"] = parentId }
         if let search, !search.isEmpty { query["SearchTerm"] = search }
         let data = try await request(server.baseURL, "Users/\(server.userId)/Items", token: token, query: query)

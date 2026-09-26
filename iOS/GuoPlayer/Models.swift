@@ -39,13 +39,14 @@ struct MediaItem: Decodable, Identifiable, Hashable {
     let indexNumber: Int?
     let runTimeTicks: Int64?
     let dateCreated: String?
+    let people: [MediaPerson]
 
     enum CodingKeys: String, CodingKey {
         case id = "Id", name = "Name", type = "Type", year = "ProductionYear", overview = "Overview"
         case communityRating = "CommunityRating", providerIds = "ProviderIds", imageTags = "ImageTags"
         case backdropImageTags = "BackdropImageTags", userData = "UserData", seriesId = "SeriesId"
         case parentIndexNumber = "ParentIndexNumber", indexNumber = "IndexNumber"
-        case runTimeTicks = "RunTimeTicks", dateCreated = "DateCreated"
+        case runTimeTicks = "RunTimeTicks", dateCreated = "DateCreated", people = "People"
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -64,6 +65,7 @@ struct MediaItem: Decodable, Identifiable, Hashable {
         indexNumber = try c.decodeIfPresent(Int.self, forKey: .indexNumber)
         runTimeTicks = try c.decodeIfPresent(Int64.self, forKey: .runTimeTicks)
         dateCreated = try c.decodeIfPresent(String.self, forKey: .dateCreated)
+        people = try c.decodeIfPresent([MediaPerson].self, forKey: .people) ?? []
         serverId = decoder.userInfo[.serverId] as? UUID ?? UUID()
     }
     static func == (lhs: Self, rhs: Self) -> Bool { lhs.serverId == rhs.serverId && lhs.id == rhs.id }
@@ -73,6 +75,14 @@ struct MediaItem: Decodable, Identifiable, Hashable {
         guard let ticks = userData?.playbackPositionTicks, let total = runTimeTicks, total > 0 else { return 0 }
         return min(1, Double(ticks) / Double(total))
     }
+}
+
+struct MediaPerson: Decodable {
+    let id: String?
+    let name: String
+    let role: String?
+    let primaryImageTag: String?
+    enum CodingKeys: String, CodingKey { case id = "Id", name = "Name", role = "Role", primaryImageTag = "PrimaryImageTag" }
 }
 
 extension CodingUserInfoKey { static let serverId = CodingUserInfoKey(rawValue: "serverId")! }
@@ -138,7 +148,16 @@ struct PlaybackSource: Decodable, Identifiable {
     let directStreamUrl: String?
     let transcodingUrl: String?
     let mediaStreams: [MediaStream]
-    enum CodingKeys: String, CodingKey { case id = "Id", container = "Container", supportsDirectPlay = "SupportsDirectPlay", supportsDirectStream = "SupportsDirectStream", directStreamUrl = "DirectStreamUrl", transcodingUrl = "TranscodingUrl", mediaStreams = "MediaStreams" }
+    let size: Int64?
+    let bitrate: Int?
+    enum CodingKeys: String, CodingKey { case id = "Id", container = "Container", supportsDirectPlay = "SupportsDirectPlay", supportsDirectStream = "SupportsDirectStream", directStreamUrl = "DirectStreamUrl", transcodingUrl = "TranscodingUrl", mediaStreams = "MediaStreams", size = "Size", bitrate = "Bitrate" }
+    var resolutionLabel: String {
+        let height = mediaStreams.first { $0.type == "Video" }?.height ?? 0
+        if height >= 2000 { return "4K" }
+        if height >= 1000 { return "1080P" }
+        if height >= 700 { return "720P" }
+        return container?.uppercased() ?? "视频"
+    }
     var canDirectStreamOnApple: Bool {
         guard supportsDirectStream == true, let value = directStreamUrl?.lowercased() else { return false }
         return value.contains(".m3u8") || value.contains(".mp4") || value.contains(".mov")
@@ -150,7 +169,10 @@ struct MediaStream: Decodable, Identifiable {
     let displayTitle: String?
     let language: String?
     let isExternal: Bool?
-    enum CodingKeys: String, CodingKey { case index = "Index", type = "Type", displayTitle = "DisplayTitle", language = "Language", isExternal = "IsExternal" }
+    let width: Int?
+    let height: Int?
+    let codec: String?
+    enum CodingKeys: String, CodingKey { case index = "Index", type = "Type", displayTitle = "DisplayTitle", language = "Language", isExternal = "IsExternal", width = "Width", height = "Height", codec = "Codec" }
     var id: Int { index }
 }
 

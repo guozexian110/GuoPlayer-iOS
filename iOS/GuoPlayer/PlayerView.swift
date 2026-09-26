@@ -20,6 +20,7 @@ struct PlayerView: View {
     @Environment(\.dismiss) private var dismiss
     let item: MediaItem
     let playlist: [MediaItem]
+    let preferredSourceId: String?
     @State private var current: MediaItem
     @State private var player = AVPlayer()
     @State private var info: PlaybackInfo?
@@ -35,8 +36,8 @@ struct PlayerView: View {
     @State private var timeObserver: Any?
     @State private var endObserver: NSObjectProtocol?
     @State private var attemptedFallback = false
-    init(item: MediaItem, playlist: [MediaItem]) {
-        self.item = item; self.playlist = playlist; _current = State(initialValue: item)
+    init(item: MediaItem, playlist: [MediaItem], preferredSourceId: String? = nil) {
+        self.item = item; self.playlist = playlist; self.preferredSourceId = preferredSourceId; _current = State(initialValue: item)
     }
     var body: some View {
         ZStack {
@@ -100,7 +101,7 @@ struct PlayerView: View {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
             try AVAudioSession.sharedInstance().setActive(true)
             let result = try await store.api.playback(server, token: token, item: current)
-            guard let first = result.mediaSources.first else { throw EmbyError.message("服务器没有可播放片源") }
+            guard let first = preferredSourceId.flatMap({ selected in result.mediaSources.first(where: { $0.id == selected }) }) ?? result.mediaSources.first else { throw EmbyError.message("服务器没有可播放片源") }
             info = result; source = first
             let container = first.container?.lowercased() ?? ""
             forceTranscode = !((first.supportsDirectPlay == true && ["mp4", "m4v", "mov"].contains(container)) || first.canDirectStreamOnApple)

@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 @main struct GuoPlayerApp: App {
     @StateObject private var store = AppStore()
@@ -11,17 +12,37 @@ import SwiftUI
     }
 }
 
+@MainActor final class AppChrome: ObservableObject {
+    @Published var selectedTab = 0
+    @Published var showingSettings = false
+    @Published var hidesNavigation = false
+    @Published var libraryCategory: String? = nil
+}
+
 struct RootView: View {
     @EnvironmentObject var store: AppStore
-    @State private var tab = 0
+    @StateObject private var chrome = AppChrome()
     var body: some View {
-        TabView(selection: $tab) {
-            NavigationStack { DiscoverView() }.tabItem { Label("发现", systemImage: "sparkles.tv") }.tag(0)
-            NavigationStack { LibraryView() }.tabItem { Label("资源库", systemImage: "square.stack") }.tag(1)
-            NavigationStack { SearchView() }.tabItem { Label("搜索", systemImage: "magnifyingglass") }.tag(2)
-            NavigationStack { ServerSettingsView() }.tabItem { Label("设置", systemImage: "gearshape") }.tag(3)
+        ZStack(alignment: .bottom) {
+            Color(red: 0.035, green: 0.065, blue: 0.10).ignoresSafeArea()
+            Group {
+                switch chrome.selectedTab {
+                case 1: NavigationStack { LibraryView() }
+                case 2: NavigationStack { SearchView() }
+                default: NavigationStack { ImmersiveDiscoverView() }
+                }
+            }
+            if !chrome.hidesNavigation { FloatingNavigationBar() }
         }
-        .background(Color(red: 0.035, green: 0.065, blue: 0.10))
+        .environmentObject(chrome)
+        .sheet(isPresented: $chrome.showingSettings) {
+            NavigationStack {
+                ServerSettingsView().toolbar { Button("完成") { chrome.showingSettings = false } }
+            }
+            .environmentObject(store)
+            .preferredColorScheme(.dark)
+            .presentationDetents([.medium, .large])
+        }
         .task { await store.refresh() }
     }
 }
@@ -53,7 +74,7 @@ struct MediaRail: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(alignment: .top, spacing: 13) {
                         ForEach(groups) { group in
-                            NavigationLink { DetailView(group: group) } label: { PosterView(item: group.primary) }
+                            NavigationLink { ImmersiveDetailView(group: group) } label: { PosterView(item: group.primary) }
                                 .buttonStyle(.plain)
                         }
                     }.padding(.horizontal, 20)
@@ -84,10 +105,10 @@ struct DiscoverView: View {
                     }.buttonStyle(.plain)
                 } else if store.servers.isEmpty {
                     VStack(spacing: 16) {
-                        Image("logo").resizable().scaledToFit().frame(width: 112, height: 112)
+                        Image("BrandMark").resizable().scaledToFit().frame(width: 112, height: 112)
                         Text("欢迎使用 GuoPlayer").font(.title.bold())
                         Text("请先在设置中添加你自己的 Emby 服务器。")
-                    }.frame(maxWidth: .infinity, minHeight: 320)
+                    }.multilineTextAlignment(.center).padding(.horizontal, 20).frame(maxWidth: .infinity, minHeight: 320)
                 } else if store.isLoading {
                     ProgressView("正在读取媒体库").frame(maxWidth: .infinity, minHeight: 260)
                 } else {
@@ -98,6 +119,8 @@ struct DiscoverView: View {
                 MediaRail(title: "电影", groups: store.groups.filter { $0.primary.type == "Movie" })
                 MediaRail(title: "电视剧与动漫", groups: store.groups.filter { $0.primary.type == "Series" })
             }.padding(.bottom, 40)
+                .frame(maxWidth: 1100)
+                .frame(maxWidth: .infinity)
         }
         .background(Color(red: 0.035, green: 0.065, blue: 0.10))
         .navigationTitle("发现")
@@ -109,6 +132,7 @@ struct DiscoverView: View {
 
 struct LibraryView: View {
     @EnvironmentObject var store: AppStore
+    @EnvironmentObject var chrome: AppChrome
     @State private var selected: UUID?
     @State private var selectedLibrary: String?
     @State private var libraryItems: [MediaItem] = []
@@ -121,6 +145,12 @@ struct LibraryView: View {
                     Text("全部服务器").tag(UUID?.none)
                     ForEach(store.servers) { server in Text(server.name).tag(Optional(server.id)) }
                 }.pickerStyle(.menu).padding(.horizontal)
+                Picker("分类", selection: $chrome.libraryCategory) {
+                    Text("全部类型").tag(String?.none)
+                    Text("电影").tag(Optional("Movie"))
+                    Text("电视剧与动漫").tag(Optional("Series"))
+                    Text("收藏").tag(Optional("Favorite"))
+                }.pickerStyle(.segmented).padding(.horizontal)
                 if let selected, let libraries = store.libraries[selected], !libraries.isEmpty {
                     Picker("媒体库", selection: $selectedLibrary) {
                         Text("全部媒体库").tag(String?.none)
@@ -130,12 +160,13 @@ struct LibraryView: View {
                 let libraryKeys = Set(libraryItems.map { "\($0.serverId):\($0.id)" })
                 let groups = store.groups.filter { group in group.variants.contains { variant in
                     (selected == nil || variant.serverId == selected) && (selectedLibrary == nil || libraryKeys.contains("\(variant.serverId):\(variant.id)"))
+                    && (chrome.libraryCategory == nil || (chrome.libraryCategory == "Favorite" ? group.isFavorite : variant.type == (chrome.libraryCategory ?? "")))
                 } }
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 125), spacing: 12)], spacing: 18) {
-                    ForEach(groups) { group in NavigationLink { DetailView(group: group) } label: { PosterView(item: group.primary) }.buttonStyle(.plain) }
+                    ForEach(groups) { group in NavigationLink { ImmersiveDetailView(group: group) } label: { PosterView(item: group.primary) }.buttonStyle(.plain) }
                 }.padding(.horizontal)
                 if canLoadMore { Button("加载更多") { Task { await loadMore() } }.frame(maxWidth: .infinity).padding() }
-            }
+            }.padding(.bottom, 110).frame(maxWidth: 1100).frame(maxWidth: .infinity)
         }
         .navigationTitle("资源库")
         .background(Color(red: 0.035, green: 0.065, blue: 0.10))
@@ -171,8 +202,8 @@ struct SearchView: View {
     var body: some View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 125), spacing: 12)], spacing: 18) {
-                ForEach(store.searchGroups) { group in NavigationLink { DetailView(group: group) } label: { PosterView(item: group.primary) }.buttonStyle(.plain) }
-            }.padding()
+                ForEach(store.searchGroups) { group in NavigationLink { ImmersiveDetailView(group: group) } label: { PosterView(item: group.primary) }.buttonStyle(.plain) }
+            }.padding().padding(.bottom, 110)
         }
         .navigationTitle("搜索")
         .searchable(text: $term, prompt: "搜索所有 Emby 服务器")

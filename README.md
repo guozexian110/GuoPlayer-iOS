@@ -1,5 +1,11 @@
 # GuoPlayer for iPhone and iPad
 
+## 1.1.1 (4) 修复
+
+详情页海报背景现在固定在设备宽度内，避免横向撑开导致文字和按钮只显示一半。播放资源收进一个可点击的选择入口，剧集选集改为横向滑动卡片，同一集在多个服务器上会先让用户选择片源。底部导航贴住屏幕底部；首页 Banner、媒体横排与剧集卡片均可横向滑动，屏幕边缘滑动可切换主栏目或返回详情。播放器会判断 Apple 设备可直接播放的编码，在播放失败或连接超时时尝试 Emby HLS 转码，并在画面中央显示失败原因。以上播放修复已通过编译和 URL 检查，仍需在实际 Emby 服务器与真机上复测。
+
+[1.1.1 (4) 未签名 IPA 构建](https://github.com/guozexian110/GuoPlayer-iOS/actions/runs/36280497468)的 `GuoPlayer-unsigned-ipa` Artifact 可用于重新签名安装。
+
 原生 SwiftUI + AVFoundation 工程：`GuoPlayer.xcodeproj`。最低 iOS/iPadOS 17，默认 Bundle ID 为 `com.guoplayer.app`，可在 Xcode 的 Target → Signing & Capabilities 修改。工程没有 Team ID、证书、Provisioning Profile、Apple ID 或内置媒体源。
 
 ## 使用和范围
@@ -12,7 +18,7 @@
 
 ## GitHub Actions：获取未签名 IPA
 
-仓库地址：[guozexian110/GuoPlayer-iOS](https://github.com/guozexian110/GuoPlayer-iOS)。在仓库 **Actions → iOS unsigned build → Run workflow**，或推送 `iOS/` 改动触发。构建成功后，在该次运行页面底部 **Artifacts → GuoPlayer-unsigned-ipa** 下载压缩包；其中是 `GuoPlayer-unsigned.ipa`。[1.1.0 (2) IPA 构建](https://github.com/guozexian110/GuoPlayer-iOS/actions/runs/36252908928)已上传该 Artifact。IPA 由 `Payload/GuoPlayer.app` 打包，不含签名。2026-09-26 的 GitHub Hosted macOS 构建已通过模拟器 Debug 和设备 Release 编译、静态检查与聚合逻辑测试；IPA 的 ZIP 结构、Bundle ID 和无签名状态已检查。
+仓库地址：[guozexian110/GuoPlayer-iOS](https://github.com/guozexian110/GuoPlayer-iOS)。在仓库 **Actions → iOS unsigned build → Run workflow**，或推送 `iOS/` 改动触发。构建成功后，在该次运行页面底部 **Artifacts → GuoPlayer-unsigned-ipa** 下载压缩包；其中是 `GuoPlayer-unsigned.ipa`。[1.1.1 (4) IPA 构建](https://github.com/guozexian110/GuoPlayer-iOS/actions/runs/36280497468)已上传该 Artifact。IPA 由 `Payload/GuoPlayer.app` 打包，不含签名。2026-09-27 的 GitHub Hosted macOS 构建已通过模拟器 Debug 和设备 Release 编译、静态检查、聚合逻辑与播放 URL 测试；IPA 的 ZIP 结构、Bundle ID 和无签名状态已检查。
 
 下载的 IPA 不能直接安装。Sideloadly、AltStore/SideStore 等工具可以用使用者自己的免费 Apple ID 重新签名并安装。按各工具提示在本机完成 Apple ID 验证，不要把密码、验证码或私钥提交到项目或 Actions。免费 Personal Team 自签通常有有效期和应用数量限制；免费 GitHub Hosted macOS 分钟也受仓库类型及账户配额限制，不保证所有账户无限零成本。
 

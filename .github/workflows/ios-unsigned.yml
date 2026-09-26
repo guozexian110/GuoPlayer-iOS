@@ -53,3 +53,11 @@ jobs:
           path: GuoPlayer-unsigned.ipa
           if-no-files-found: error
           retention-days: 30
+      - name: Capture iPhone and iPad launch screenshots
+        run: |
+          python3 iOS/tools/capture_simulator.py "$RUNNER_TEMP/guoplayer-simulator/Build/Products/Debug-iphonesimulator/GuoPlayer.app" "$RUNNER_TEMP/guoplayer-screenshots"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GuoPlayer-simulator-screenshots
+          path: ${{ runner.temp }}/guoplayer-screenshots/*.png
+          if-no-files-found: error

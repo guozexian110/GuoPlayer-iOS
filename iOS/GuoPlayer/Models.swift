@@ -93,9 +93,13 @@ struct MediaGroup: Identifiable {
 }
 
 enum MediaAggregation {
-    static func groups(_ items: [MediaItem]) -> [MediaGroup] {
+    static func groups(_ items: [MediaItem], includeEpisodes: Bool = false) -> [MediaGroup] {
         var groups: [MediaGroup] = []
-        for item in items where item.type == "Movie" || item.type == "Series" {
+        for item in items where item.type == "Movie" || item.type == "Series" || (includeEpisodes && item.type == "Episode") {
+            if item.type == "Episode" {
+                groups.append(MediaGroup(id: "\(item.serverId):\(item.id)", variants: [item]))
+                continue
+            }
             if let index = groups.firstIndex(where: { group in group.variants.contains { matches($0, item) } }) {
                 if !groups[index].variants.contains(item) { groups[index].variants.append(item) }
             } else {

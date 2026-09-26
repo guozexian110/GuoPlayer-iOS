@@ -35,7 +35,7 @@ enum TokenVault {
     private var offsets: [UUID: Int] = [:]
     private let key = "GuoPlayerServersV1"
     var groups: [MediaGroup] { MediaAggregation.groups(items) }
-    var resumeGroups: [MediaGroup] { MediaAggregation.groups(continueWatching) }
+    var resumeGroups: [MediaGroup] { MediaAggregation.groups(continueWatching, includeEpisodes: true) }
     var searchGroups: [MediaGroup] { MediaAggregation.groups(searchResults) }
 
     init() {

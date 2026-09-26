@@ -1,0 +1,44 @@
+name: iOS unsigned build
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'iOS/**'
+      - '.github/workflows/ios-unsigned.yml'
+
+jobs:
+  build:
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: |
+          xcode-select -p
+          xcodebuild -version
+      - name: Validate project and compile for iPhone simulator
+        run: |
+          set -euo pipefail
+          plutil -lint iOS/GuoPlayer/Info.plist iOS/GuoPlayer.xcodeproj/project.pbxproj
+          python3 iOS/tools/validate_project.py
+          swiftc iOS/GuoPlayer/Models.swift iOS/Tests/AggregationSmoke.swift -o "$RUNNER_TEMP/aggregation-smoke"
+          "$RUNNER_TEMP/aggregation-smoke"
+          xcodebuild -project iOS/GuoPlayer.xcodeproj -scheme GuoPlayer -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/guoplayer-simulator" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+      - name: Build unsigned iPhone and iPad app
+        run: |
+          set -euo pipefail
+          xcodebuild -project iOS/GuoPlayer.xcodeproj -scheme GuoPlayer -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/guoplayer-device" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+          APP="$RUNNER_TEMP/guoplayer-device/Build/Products/Release-iphoneos/GuoPlayer.app"
+          test -f "$APP/GuoPlayer"
+          if codesign -dv "$APP" >/dev/null 2>&1; then echo 'Expected an unsigned app' >&2; exit 1; fi
+          mkdir -p "$RUNNER_TEMP/guoplayer-ipa/Payload"
+          ditto "$APP" "$RUNNER_TEMP/guoplayer-ipa/Payload/GuoPlayer.app"
+          (cd "$RUNNER_TEMP/guoplayer-ipa" && ditto -c -k --sequesterRsrc --keepParent Payload "$GITHUB_WORKSPACE/GuoPlayer-unsigned.ipa")
+          unzip -l GuoPlayer-unsigned.ipa | grep 'Payload/GuoPlayer.app/GuoPlayer'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GuoPlayer-unsigned-ipa
+          path: GuoPlayer-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30

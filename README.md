@@ -10,7 +10,7 @@
 
 ## GitHub Actions：获取未签名 IPA
 
-把整个项目目录提交到你有权限的 GitHub 仓库。在仓库 **Actions → iOS unsigned build → Run workflow**，或推送 `iOS/` 改动触发。构建成功后，在该次运行页面底部 **Artifacts → GuoPlayer-unsigned-ipa** 下载压缩包；其中是 `GuoPlayer-unsigned.ipa`。IPA 由 `Payload/GuoPlayer.app` 打包，不含签名。当前 Windows 环境不能运行 Xcode，且本目录没有 Git 远端，因此这里无法直接产出或实际验证 IPA；首次 Actions 构建结果应作为编译验收。
+仓库地址：[guozexian110/GuoPlayer-iOS](https://github.com/guozexian110/GuoPlayer-iOS)。在仓库 **Actions → iOS unsigned build → Run workflow**，或推送 `iOS/` 改动触发。构建成功后，在该次运行页面底部 **Artifacts → GuoPlayer-unsigned-ipa** 下载压缩包；其中是 `GuoPlayer-unsigned.ipa`。IPA 由 `Payload/GuoPlayer.app` 打包，不含签名。2026-09-26 的 GitHub Hosted macOS 构建已通过模拟器 Debug 和设备 Release 编译、静态检查与聚合逻辑测试；IPA 的 ZIP 结构、Bundle ID 和无签名状态已检查。
 
 下载的 IPA 不能直接安装。Sideloadly、AltStore/SideStore 等工具可以用使用者自己的免费 Apple ID 重新签名并安装。按各工具提示在本机完成 Apple ID 验证，不要把密码、验证码或私钥提交到项目或 Actions。免费 Personal Team 自签通常有有效期和应用数量限制；免费 GitHub Hosted macOS 分钟也受仓库类型及账户配额限制，不保证所有账户无限零成本。
 
@@ -24,4 +24,4 @@ xcodebuild -project iOS/GuoPlayer.xcodeproj -scheme GuoPlayer -configuration Rel
 
 ## 已知限制
 
-当前尚未在 macOS/Xcode、真实 iPhone/iPad、用户的 Emby 服务器上运行。对于非 Apple 原生支持的容器，Emby 需要允许 HLS 转码。外挂字幕需要服务器提供可转码字幕轨道；内嵌轨道也取决于 AVPlayer 或转码结果。没有实现离线下载、弹幕、跨服务器进度双向同步。服务器媒体库大于首页第一页时，需要在资源库选中具体媒体库；尚无全库持续分页索引。
+当前尚未在真实 iPhone/iPad 或用户的 Emby 服务器上验证。对于非 Apple 原生支持的容器，Emby 需要允许 HLS 转码。外挂字幕需要服务器提供可转码字幕轨道；内嵌轨道也取决于 AVPlayer 或转码结果。没有实现离线下载、弹幕、跨服务器进度双向同步。服务器媒体库大于首页第一页时，需要在资源库选中具体媒体库；尚无全库持续分页索引。

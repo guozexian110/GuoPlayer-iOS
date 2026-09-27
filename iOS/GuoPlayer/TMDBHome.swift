@@ -12,10 +12,10 @@ struct TMDBDiscoverHome: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 header
-                if !store.hasTMDBCredential {
-                    ContentUnavailableView("连接 TMDb 发现影视", systemImage: "sparkles.tv",
-                                           description: Text("在设置中添加免费的 TMDb API Read Access Token 或 API Key，即可显示实时内容。"))
-                    Button("打开设置") { chrome.showingSettings = true }
+                if !store.tmdbFeedReady && !store.hasTMDBCredential && !store.tmdbLoading {
+                    ContentUnavailableView("自动内容暂不可用", systemImage: "wifi.exclamationmark",
+                                           description: Text(store.tmdbError ?? "请检查网络后重试。"))
+                    Button("重新加载") { Task { await store.refreshTMDB() } }
                         .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
                 } else {
                     if store.tmdbLoading && store.tmdbLists.isEmpty {

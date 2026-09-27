@@ -34,6 +34,7 @@ enum TokenVault {
     @Published var tmdbLists: [String: [TMDBTitle]] = [:]
     @Published var tmdbError: String?
     @Published var tmdbLoading = false
+    @Published var tmdbFeedReady = false
     @Published var hasTMDBCredential = TMDBCredential.read() != nil
     let api = EmbyAPI()
     private var offsets: [UUID: Int] = [:]
@@ -54,9 +55,20 @@ enum TokenVault {
         tmdbError = nil
     }
     func refreshTMDB() async {
-        guard !tmdbLoading, let credential = TMDBCredential.read() else { return }
+        guard !tmdbLoading else { return }
         tmdbLoading = true
         tmdbError = nil
+        do {
+            let feed = try await TMDBClient().homeFeed()
+            tmdbLists = feed.sections
+            tmdbFeedReady = true
+            tmdbLoading = false
+            return
+        } catch {
+            tmdbFeedReady = false
+            tmdbError = error.localizedDescription
+        }
+        guard let credential = TMDBCredential.read() else { tmdbLoading = false; return }
         let requests: [(String, String, [URLQueryItem])] = [
             ("day", "/trending/all/day", []), ("week", "/trending/all/week", []),
             ("now", "/movie/now_playing", [URLQueryItem(name: "region", value: "CN")]),

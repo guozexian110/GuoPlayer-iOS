@@ -32,6 +32,7 @@ struct TMDBTitle: Decodable, Identifiable, Hashable {
 }
 
 private struct TMDBResponse: Decodable { let results: [TMDBTitle] }
+struct TMDBHomeFeed: Decodable { let sections: [String: [TMDBTitle]] }
 
 enum TMDBCredential {
     private static let account = "tmdb-api"
@@ -62,6 +63,21 @@ enum TMDBCredential {
 
 struct TMDBClient {
     var session: URLSession = .shared
+
+    func homeFeed() async throws -> TMDBHomeFeed {
+        var components = URLComponents(string: "https://guozexian110.github.io/GuoPlayer-iOS/feed/home.json")!
+        components.queryItems = [URLQueryItem(name: "opened", value: String(Int(Date().timeIntervalSince1970)))]
+        var request = URLRequest(url: components.url!)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 15
+        let (data, response) = try await session.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            throw EmbyError.message("自动影视内容暂不可用")
+        }
+        let feed = try JSONDecoder().decode(TMDBHomeFeed.self, from: data)
+        guard !feed.sections.isEmpty else { throw EmbyError.message("自动影视内容尚未生成") }
+        return feed
+    }
 
     func list(_ path: String, credential: String, parameters: [URLQueryItem] = []) async throws -> [TMDBTitle] {
         guard path.hasPrefix("/") && !path.contains(".."),

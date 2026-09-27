@@ -21,6 +21,7 @@ import Combine
 
 struct RootView: View {
     @EnvironmentObject var store: AppStore
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var chrome = AppChrome()
     var body: some View {
         GeometryReader { geometry in
@@ -30,7 +31,7 @@ struct RootView: View {
                     switch chrome.selectedTab {
                     case 1: NavigationStack { LibraryView() }
                     case 2: NavigationStack { SearchView() }
-                    default: NavigationStack { ImmersiveDiscoverView() }
+                    default: NavigationStack { TMDBDiscoverHome() }
                     }
                 }
             }
@@ -59,7 +60,10 @@ struct RootView: View {
             .preferredColorScheme(.dark)
             .presentationDetents([.medium, .large])
         }
-        .task { await store.refresh() }
+        .task { await store.refresh(); await store.refreshTMDB() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { Task { await store.refreshTMDB() } }
+        }
     }
 }
 

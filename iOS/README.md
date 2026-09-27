@@ -1,5 +1,7 @@
 # GuoPlayer for iPhone and iPad
 
+发现首页使用 TMDb API 提供精选、今日/本周趋势、热映、动画、平台、分类、片商及榜单模块。用户在设置中输入免费 TMDb API 凭据，凭据仅存本机 Keychain。App 启动与回到前台时刷新；条目以 TMDb Provider ID 匹配已连接 Emby 片源。没有 API 凭据或匹配片源时会明确提示。
+
 原生 SwiftUI + AVFoundation 工程：`GuoPlayer.xcodeproj`。最低 iOS/iPadOS 17，默认 Bundle ID 为 `com.guoplayer.app`，可在 Xcode 的 Target → Signing & Capabilities 修改。工程没有 Team ID、证书、Provisioning Profile、Apple ID 或内置媒体源。
 
 ## 使用和范围

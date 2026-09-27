@@ -3,9 +3,25 @@ import SwiftUI
 struct ServerSettingsView: View {
     @EnvironmentObject var store: AppStore
     @State private var showingAdd = false
+    @State private var tmdbCredential = ""
+    @State private var tmdbMessage: String?
     @State private var editing: EmbyServer?
     var body: some View {
         List {
+            Section("TMDb 发现内容") {
+                SecureField("API Read Access Token 或 API Key", text: $tmdbCredential)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                Button(store.hasTMDBCredential ? "更新 TMDb 凭据" : "保存 TMDb 凭据") {
+                    Task {
+                        do { try await store.saveTMDBCredential(tmdbCredential); tmdbCredential = ""; tmdbMessage = "已保存并刷新首页" }
+                        catch { tmdbMessage = error.localizedDescription }
+                    }
+                }.disabled(tmdbCredential.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if store.hasTMDBCredential { Button("移除 TMDb 凭据", role: .destructive) { store.deleteTMDBCredential() } }
+                if let tmdbMessage { Text(tmdbMessage).font(.caption).foregroundStyle(.secondary) }
+                Text("免费凭据从 TMDb 官网申请，仅保存在本机 Keychain。首页每次打开或回到前台时更新。")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("Emby 服务器") {
                 ForEach(store.servers) { server in
                     Button { editing = server } label: { VStack(alignment: .leading, spacing: 4) {

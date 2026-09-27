@@ -31,12 +31,71 @@ enum TokenVault {
     @Published var searchResults: [MediaItem] = []
     @Published var isLoading = false
     @Published var error: String?
+    @Published var tmdbLists: [String: [TMDBTitle]] = [:]
+    @Published var tmdbError: String?
+    @Published var tmdbLoading = false
+    @Published var hasTMDBCredential = TMDBCredential.read() != nil
     let api = EmbyAPI()
     private var offsets: [UUID: Int] = [:]
     private let key = "GuoPlayerServersV1"
     var groups: [MediaGroup] { MediaAggregation.groups(items) }
     var resumeGroups: [MediaGroup] { MediaAggregation.groups(continueWatching, includeEpisodes: true) }
     var searchGroups: [MediaGroup] { MediaAggregation.groups(searchResults) }
+
+    func saveTMDBCredential(_ value: String) async throws {
+        try TMDBCredential.save(value)
+        hasTMDBCredential = true
+        await refreshTMDB()
+    }
+    func deleteTMDBCredential() {
+        TMDBCredential.delete()
+        hasTMDBCredential = false
+        tmdbLists = [:]
+        tmdbError = nil
+    }
+    func refreshTMDB() async {
+        guard !tmdbLoading, let credential = TMDBCredential.read() else { return }
+        tmdbLoading = true
+        tmdbError = nil
+        let requests: [(String, String, [URLQueryItem])] = [
+            ("day", "/trending/all/day", []), ("week", "/trending/all/week", []),
+            ("now", "/movie/now_playing", [URLQueryItem(name: "region", value: "CN")]),
+            ("anime", "/discover/tv", [URLQueryItem(name: "with_genres", value: "16"), URLQueryItem(name: "with_original_language", value: "ja"), URLQueryItem(name: "sort_by", value: "popularity.desc")]),
+            ("movie", "/movie/popular", []), ("tv", "/tv/popular", []),
+            ("topMovie", "/movie/top_rated", []), ("topTV", "/tv/top_rated", []),
+            ("family", "/discover/movie", [URLQueryItem(name: "with_genres", value: "10751"), URLQueryItem(name: "sort_by", value: "popularity.desc")]),
+            ("animation", "/discover/movie", [URLQueryItem(name: "with_genres", value: "16"), URLQueryItem(name: "sort_by", value: "popularity.desc")]),
+            ("netflix", "/discover/movie", [URLQueryItem(name: "with_watch_providers", value: "8"), URLQueryItem(name: "watch_region", value: "US")]),
+            ("disney", "/discover/movie", [URLQueryItem(name: "with_watch_providers", value: "337"), URLQueryItem(name: "watch_region", value: "US")]),
+            ("apple", "/discover/movie", [URLQueryItem(name: "with_watch_providers", value: "350"), URLQueryItem(name: "watch_region", value: "US")]),
+            ("universal", "/discover/movie", [URLQueryItem(name: "with_companies", value: "33")]),
+            ("paramount", "/discover/movie", [URLQueryItem(name: "with_companies", value: "4")]),
+            ("columbia", "/discover/movie", [URLQueryItem(name: "with_companies", value: "5")]),
+            ("marvel", "/discover/movie", [URLQueryItem(name: "with_companies", value: "420")])
+        ]
+        let results = await withTaskGroup(of: (String, [TMDBTitle]?, String?).self) { group in
+            for (key, path, parameters) in requests {
+                group.addTask {
+                    do { return (key, try await TMDBClient().list(path, credential: credential, parameters: parameters), nil) }
+                    catch { return (key, nil, error.localizedDescription) }
+                }
+            }
+            var output: [(String, [TMDBTitle]?, String?)] = []
+            for await result in group { output.append(result) }
+            return output
+        }
+        for (key, titles, _) in results { if let titles { tmdbLists[key] = titles } }
+        if let failure = results.first(where: { $0.2 != nil })?.2 { tmdbError = failure }
+        tmdbLoading = false
+    }
+    func embyGroup(for title: TMDBTitle) -> MediaGroup? {
+        groups.first { group in
+            guard group.primary.type == (title.kind == "movie" ? "Movie" : "Series") else { return false }
+            return group.variants.contains { item in
+                item.providerIds.first { $0.key.caseInsensitiveCompare("Tmdb") == .orderedSame }?.value == String(title.id)
+            }
+        }
+    }
 
     init() {
         if let data = UserDefaults.standard.data(forKey: key), let stored = try? JSONDecoder().decode([EmbyServer].self, from: data) { servers = stored }

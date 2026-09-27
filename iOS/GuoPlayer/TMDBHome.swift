@@ -12,11 +12,9 @@ struct TMDBDiscoverHome: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 header
-                if !store.tmdbFeedReady && !store.hasTMDBCredential && !store.tmdbLoading {
-                    ContentUnavailableView("自动内容暂不可用", systemImage: "wifi.exclamationmark",
-                                           description: Text(store.tmdbError ?? "请检查网络后重试。"))
-                    Button("重新加载") { Task { await store.refreshTMDB() } }
-                        .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
+                if !store.hasTMDBCredential {
+                    ContentUnavailableView("个人 TMDb 数据", systemImage: "sparkles.tv",
+                                           description: Text("如需使用个人 TMDb 凭据，请在设置中自行配置。"))
                 } else {
                     if store.tmdbLoading && store.tmdbLists.isEmpty {
                         ProgressView("正在读取 TMDb").frame(maxWidth: .infinity, minHeight: 240)

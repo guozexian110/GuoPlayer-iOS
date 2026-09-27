@@ -81,8 +81,8 @@ struct ImmersiveDiscoverView: View {
 
                     VStack(alignment: .leading, spacing: 27) {
                         WideMediaRail(title: "继续观看", groups: store.resumeGroups, showsProgress: true)
-                        WideMediaRail(title: "今日推荐", groups: Array(store.groups.prefix(20)))
-                        WideMediaRail(title: "本周热播", groups: Array(topRated.prefix(20)))
+                        WideMediaRail(title: "我的媒体", groups: Array(store.groups.prefix(20)))
+                        WideMediaRail(title: "高分作品", groups: Array(topRated.prefix(20)))
                         if let spotlight = store.groups.first(where: { $0.primary.type == "Movie" }) {
                             DiscoverySpotlight(group: spotlight)
                         }

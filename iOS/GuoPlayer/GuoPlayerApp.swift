@@ -31,7 +31,10 @@ struct RootView: View {
                     switch chrome.selectedTab {
                     case 1: NavigationStack { LibraryView() }
                     case 2: NavigationStack { SearchView() }
-                    default: NavigationStack { TMDBDiscoverHome() }
+                    default: NavigationStack {
+                        if store.hasTMDBCredential && (store.tmdbLoading || !store.tmdbLists.isEmpty) { TMDBDiscoverHome() }
+                        else { ImmersiveDiscoverView() }
+                    }
                     }
                 }
             }
@@ -62,7 +65,7 @@ struct RootView: View {
         }
         .task { await store.refresh(); await store.refreshTMDB() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await store.refreshTMDB() } }
+            if phase == .active { Task { await store.refresh(); await store.refreshTMDB() } }
         }
     }
 }

@@ -8,8 +8,8 @@ struct ServerSettingsView: View {
     @State private var editing: EmbyServer?
     var body: some View {
         List {
-            Section("TMDb 发现内容 · 自动更新") {
-                Text("首页默认自动加载，无需在手机上填写密钥。下方为自动服务不可用时的个人备用凭据。")
+            Section("个人 TMDb 发现内容") {
+                Text("可选。个人凭据只用于自己的设备；不填写时发现首页自动展示已连接的 Emby 内容。")
                     .font(.caption).foregroundStyle(.secondary)
                 SecureField("API Read Access Token 或 API Key", text: $tmdbCredential)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -21,7 +21,7 @@ struct ServerSettingsView: View {
                 }.disabled(tmdbCredential.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 if store.hasTMDBCredential { Button("移除 TMDb 凭据", role: .destructive) { store.deleteTMDBCredential() } }
                 if let tmdbMessage { Text(tmdbMessage).font(.caption).foregroundStyle(.secondary) }
-                Text("备用凭据仅保存在本机 Keychain。首页每次打开或回到前台时更新。")
+                Text("个人凭据仅保存在本机 Keychain。首页每次打开或回到前台时更新。")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Emby 服务器") {

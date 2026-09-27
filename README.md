@@ -1,10 +1,10 @@
 # GuoPlayer for iPhone and iPad
 
-## 1.1.5 (8) 自动 TMDb 首页
+## 1.1.6 (9) 零成本首页回退
 
-App 默认从 GuoPlayer 的公开发现数据源读取影视信息，无须在每台手机上输入 TMDb 凭据。每次启动和回到前台都会重新请求；后台 GitHub Actions 每小时从 TMDb 更新数据，因此页面数据最多可能落后约一小时，GitHub 定时任务延迟时可能更久。设置中的个人 TMDb 凭据保留为自动数据源不可用时的备用方式。
+发现首页默认展示用户已连接的 Emby 内容，每次打开和回到前台刷新。个人用户可选填自己的免费 TMDb 凭据，在自己的设备上启用 TMDb 发现页；未填写时不出现空白的 TMDb 配置页。
 
-项目所有者只需一次性在 GitHub 仓库 **Settings → Secrets and variables → Actions** 设置 `TMDB_READ_TOKEN`（免费 TMDb API Read Access Token，或 v3 API Key），然后运行 **Actions → Update TMDb discovery feed → Run workflow**。该 Secret 仅供 GitHub Actions 读取，生成的公开 JSON 不包含凭据。发现数据通过 GitHub Pages 发布于 `https://guozexian110.github.io/GuoPlayer-iOS/feed/home.json`。GitHub Pages 需配置为 GitHub Actions 部署源。
+TMDb 的申请页面将向其他用户公开供数的用途导向商业订阅。为遵守零成本目标，仓库不再运行公开 TMDb 数据源；不要把个人免费 Token 放进面向所有用户的共享服务。若 TMDb 将来书面允许免费开源公开使用，可再接入经授权的数据源。
 
 ## 1.1.4 (7) 今日动漫
 
@@ -18,7 +18,7 @@ App 默认从 GuoPlayer 的公开发现数据源读取影视信息，无须在�
 
 发现页按精选卡、今日趋势、本周趋势、热门电影与剧集、正在热映、今日动漫、播出平台、分类浏览、电影公司和高分榜单排列。影视条目、海报和简介从 TMDb API 读取；平台和电影公司模块使用 TMDb 筛选条件。每次启动、返回前台或下拉刷新时重新请求。点开条目后，若 TMDb ID 与 Emby 媒体库的 ProviderIds 匹配，可进入真实片源详情；没有片源时会明确提示。界面采用 GuoPlayer 自己的样式，不包含参考 App 的素材。
 
-个人备用凭据可在设置中输入，仅保存在本机 Keychain。项目所有者提供给自动更新流程的 TMDb 凭据保存在 GitHub Actions Secret，不写入工程或 IPA。没有可用数据时首页显示重试入口，不会伪造影视数据。TMDb 资料归 TMDb 及相应权利人所有，本应用未获得其认可或背书。
+个人凭据可在设置中输入，仅保存在本机 Keychain；未配置时首页使用 Emby 数据。TMDb 资料归 TMDb 及相应权利人所有，本应用未获得其认可或背书。
 
 ## 1.1.1 (4) 修复
 

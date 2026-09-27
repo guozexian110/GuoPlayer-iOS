@@ -131,6 +131,23 @@ final class EmbyAPI {
         let container = source.container?.lowercased() ?? "mp4"
         return url(server, "Videos/\(item.id)/stream." + (container == "m4v" ? "mp4" : container), query: query)
     }
+    func streamURLs(_ server: EmbyServer, token: String, item: MediaItem, source: PlaybackSource, forceTranscode: Bool, audio: Int? = nil, subtitle: Int? = nil, sessionId: String? = nil, preferServerTranscodingURL: Bool = true) -> [URL] {
+        let primary = streamURL(server, token: token, item: item, source: source, forceTranscode: forceTranscode,
+                                audio: audio, subtitle: subtitle, sessionId: sessionId,
+                                preferServerTranscodingURL: preferServerTranscodingURL)
+        var candidates = [primary]
+        guard primary.host?.lowercased() == server.baseURL.host?.lowercased(),
+              var alternative = URLComponents(url: primary, resolvingAgainstBaseURL: false) else { return candidates }
+        var path = alternative.percentEncodedPath
+        if let range = path.range(of: "/emby/Videos/", options: .caseInsensitive) {
+            path.replaceSubrange(range, with: "/Videos/")
+        } else if let range = path.range(of: "/Videos/", options: .caseInsensitive) {
+            path.replaceSubrange(range, with: "/emby/Videos/")
+        } else { return candidates }
+        alternative.percentEncodedPath = path
+        if let alternateURL = alternative.url, alternateURL != primary { candidates.append(alternateURL) }
+        return candidates
+    }
     func report(_ server: EmbyServer, token: String, item: MediaItem, source: PlaybackSource, session: String?, position: Int64, phase: String, paused: Bool = false, method: String = "DirectPlay") async {
         var body: [String: Any] = ["ItemId": item.id, "MediaSourceId": source.id, "PositionTicks": position, "IsPaused": paused, "PlayMethod": method]
         if let session { body["PlaySessionId"] = session }

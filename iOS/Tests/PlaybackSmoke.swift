@@ -18,6 +18,11 @@ import Foundation
         let fallbackQuery = URLComponents(url: fallback, resolvingAgainstBaseURL: false)!.queryItems ?? []
         precondition(fallback.path == "/emby/Videos/video/master.m3u8")
         precondition(fallbackQuery.contains(URLQueryItem(name: "PlaySessionId", value: "session")))
+        let candidates = api.streamURLs(server, token: "test-token", item: item, source: source, forceTranscode: true)
+        precondition(candidates.count == 2)
+        precondition(candidates[0].path == "/emby/Videos/video/master.m3u8")
+        precondition(candidates[1].path == "/Videos/video/master.m3u8")
+        precondition(URLComponents(url: candidates[1], resolvingAgainstBaseURL: false)?.queryItems?.contains(URLQueryItem(name: "api_key", value: "test-token")) == true)
         print("PlaybackSmoke: PASS")
     }
 }

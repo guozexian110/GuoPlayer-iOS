@@ -40,6 +40,7 @@ struct PlayerView: View {
     @State private var startupTask: Task<Void, Never>?
     @State private var attemptedFallback = false
     @State private var attemptedAlternateHLS = false
+    @State private var urlVariantIndex = 0
     init(item: MediaItem, playlist: [MediaItem], preferredSourceId: String? = nil) {
         self.item = item; self.playlist = playlist; self.preferredSourceId = preferredSourceId; _current = State(initialValue: item)
     }
@@ -115,7 +116,7 @@ struct PlayerView: View {
             try AVAudioSession.sharedInstance().setActive(true)
             let result = try await store.api.playback(server, token: token, item: current)
             guard let first = preferredSourceId.flatMap({ selected in result.mediaSources.first(where: { $0.id == selected }) }) ?? result.mediaSources.first else { throw EmbyError.message("服务器没有可播放片源") }
-            info = result; source = first
+            info = result; source = first; urlVariantIndex = 0; attemptedFallback = false; attemptedAlternateHLS = false
             forceTranscode = !(first.canDirectPlayOnApple || first.canDirectStreamOnApple)
             startPlayback()
         } catch { self.error = error.localizedDescription; loading = false }
@@ -128,7 +129,8 @@ struct PlayerView: View {
         loading = true
         error = nil
         report("/Stopped")
-        let url = store.api.streamURL(server, token: token, item: current, source: source, forceTranscode: forceTranscode, audio: chosenAudio, subtitle: chosenSubtitle, sessionId: info?.playSessionId, preferServerTranscodingURL: !attemptedAlternateHLS)
+        let urls = store.api.streamURLs(server, token: token, item: current, source: source, forceTranscode: forceTranscode, audio: chosenAudio, subtitle: chosenSubtitle, sessionId: info?.playSessionId, preferServerTranscodingURL: !attemptedAlternateHLS)
+        let url = urls[min(urlVariantIndex, urls.count - 1)]
         let asset = AVURLAsset(url: url)
         let playerItem = AVPlayerItem(asset: asset)
         player.replaceCurrentItem(with: playerItem)
@@ -177,12 +179,20 @@ struct PlayerView: View {
     private func handlePlaybackFailure(_ detail: String?) {
         startupTask?.cancel()
         loading = false
-        if !forceTranscode && !attemptedFallback {
+        if let server = store.server(for: current), let token = TokenVault.read(server.id), let source,
+           urlVariantIndex + 1 < store.api.streamURLs(server, token: token, item: current, source: source,
+               forceTranscode: forceTranscode, audio: chosenAudio, subtitle: chosenSubtitle,
+               sessionId: info?.playSessionId, preferServerTranscodingURL: !attemptedAlternateHLS).count {
+            urlVariantIndex += 1
+            startPlayback()
+        } else if !forceTranscode && !attemptedFallback {
             attemptedFallback = true
             forceTranscode = true
+            urlVariantIndex = 0
             startPlayback()
         } else if forceTranscode && !attemptedAlternateHLS && source?.transcodingUrl != nil {
             attemptedAlternateHLS = true
+            urlVariantIndex = 0
             startPlayback()
         } else {
             player.pause()
@@ -197,7 +207,7 @@ struct PlayerView: View {
     }
     private func advance() {
         guard let next = nextEpisode else { return }
-        report("/Stopped"); current = next; info = nil; source = nil; position = 0; attemptedFallback = false; attemptedAlternateHLS = false; Task { await prepare() }
+        report("/Stopped"); current = next; info = nil; source = nil; position = 0; attemptedFallback = false; attemptedAlternateHLS = false; urlVariantIndex = 0; Task { await prepare() }
     }
     private func stop() {
         report("/Stopped")

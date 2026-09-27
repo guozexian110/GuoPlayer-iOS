@@ -60,7 +60,7 @@ enum TokenVault {
         let requests: [(String, String, [URLQueryItem])] = [
             ("day", "/trending/all/day", []), ("week", "/trending/all/week", []),
             ("now", "/movie/now_playing", [URLQueryItem(name: "region", value: "CN")]),
-            ("anime", "/discover/tv", [URLQueryItem(name: "with_genres", value: "16"), URLQueryItem(name: "with_original_language", value: "ja"), URLQueryItem(name: "sort_by", value: "popularity.desc")]),
+            ("anime", "/tv/airing_today", [URLQueryItem(name: "timezone", value: "Asia/Shanghai")]),
             ("movie", "/movie/popular", []), ("tv", "/tv/popular", []),
             ("topMovie", "/movie/top_rated", []), ("topTV", "/tv/top_rated", []),
             ("family", "/discover/movie", [URLQueryItem(name: "with_genres", value: "10751"), URLQueryItem(name: "sort_by", value: "popularity.desc")]),
@@ -84,7 +84,9 @@ enum TokenVault {
             for await result in group { output.append(result) }
             return output
         }
-        for (key, titles, _) in results { if let titles { tmdbLists[key] = titles } }
+        for (key, titles, _) in results {
+            if let titles { tmdbLists[key] = key == "anime" ? titles.filter { $0.genreIds?.contains(16) == true } : titles }
+        }
         if let failure = results.first(where: { $0.2 != nil })?.2 { tmdbError = failure }
         tmdbLoading = false
     }

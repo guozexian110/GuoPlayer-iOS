@@ -25,8 +25,9 @@ struct FloatingNavigationBar: View {
         .padding(.top, 8)
         .padding(.bottom, 3)
         .frame(maxWidth: .infinity)
-        .background(canvas.opacity(0.98))
-        .overlay(alignment: .top) { Rectangle().fill(.white.opacity(0.12)).frame(height: 1) }
+        .background(.ultraThinMaterial, in: Capsule())
+        .padding(.horizontal, 12)
+        .padding(.bottom, 3)
     }
 
     private func tab(_ title: String, icon: String, index: Int) -> some View {
@@ -247,7 +248,7 @@ private struct DiscoveryHero: View {
     }
 }
 
-private struct WideMediaRail: View {
+struct WideMediaRail: View {
     @EnvironmentObject private var chrome: AppChrome
     let title: String
     let groups: [MediaGroup]

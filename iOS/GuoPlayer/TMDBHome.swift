@@ -72,7 +72,7 @@ struct TMDBDiscoverHome: View {
                 }.tabViewStyle(.page(indexDisplayMode: .never))
                 HStack(spacing: 6) {
                     ForEach(heroes.indices, id: \.self) { index in
-                        Circle().fill(index == heroIndex ? .white : .white.opacity(0.35)).frame(width: 5, height: 5)
+                        Circle().fill(index == heroIndex ? Color.white : Color.white.opacity(0.35)).frame(width: 5, height: 5)
                     }
                 }.padding(.bottom, 14)
             }
@@ -223,7 +223,7 @@ struct HomeLayoutEditor: View {
     static let defaultOrder = "resume,day,week,popular,now,anime,providers,genres,companies,rankings"
     static let labels = ["resume": "继续观看", "day": "今日趋势", "week": "本周趋势", "popular": "热门电影", "now": "正在热映", "anime": "今日动漫", "providers": "播出平台", "genres": "分类浏览", "companies": "电影公司", "rankings": "高分榜"]
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("homeModuleOrder") private var order = defaultOrder
+    @AppStorage("homeModuleOrder") private var order = HomeLayoutEditor.defaultOrder
     @AppStorage("homeHiddenModules") private var hidden = ""
     var body: some View {
         List {
@@ -334,7 +334,7 @@ private struct TMDBCollectionView: View {
                             ForEach(titles) { item in
                                 NavigationLink { TMDBTitleDetail(title: item) } label: {
                                     VStack(spacing: 5) {
-                                        TMDBImage(url: item.imageURL).aspectRatio(2 / 3, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 11))
+                                        TMDBImage(url: item.imageURL).aspectRatio(2.0 / 3.0, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 11))
                                         Text(item.displayTitle).font(.caption).lineLimit(1)
                                         Text(item.year).font(.caption2).foregroundStyle(.secondary)
                                     }

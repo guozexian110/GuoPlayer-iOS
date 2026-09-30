@@ -156,6 +156,7 @@ struct DiscoverView: View {
 struct LibraryView: View {
     @EnvironmentObject var store: AppStore
     @EnvironmentObject var chrome: AppChrome
+    @State private var showingAdd = false
     @State private var selected: UUID?
     @State private var selectedLibrary: String?
     @State private var libraryItems: [MediaItem] = []
@@ -164,6 +165,27 @@ struct LibraryView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                HStack {
+                    Text("资源库").font(.headline)
+                    Button { showingAdd = true } label: { Image(systemName: "plus") }.accessibilityLabel("添加 Emby 媒体库")
+                    Spacer()
+                }.padding(.horizontal)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(store.servers) { server in
+                            Button { selected = selected == server.id ? nil : server.id } label: {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Image("BrandMark").resizable().scaledToFit().frame(width: 30, height: 30).clipShape(Circle())
+                                    Text(server.name).font(.subheadline.bold()).lineLimit(1)
+                                    Text("\(store.items.filter { $0.serverId == server.id }.count) 个已读取项目").font(.caption2).foregroundStyle(.secondary)
+                                }.frame(width: 185, alignment: .leading).padding(15)
+                                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 17))
+                                    .overlay { RoundedRectangle(cornerRadius: 17).stroke(selected == server.id ? Color.cyan : Color.clear, lineWidth: 1) }
+                            }.buttonStyle(.plain)
+                        }
+                    }.padding(.horizontal)
+                }
+
                 Picker("服务器", selection: $selected) {
                     Text("全部服务器").tag(UUID?.none)
                     ForEach(store.servers) { server in Text(server.name).tag(Optional(server.id)) }
@@ -191,7 +213,8 @@ struct LibraryView: View {
                 if canLoadMore { Button("加载更多") { Task { await loadMore() } }.frame(maxWidth: .infinity).padding() }
             }.padding(.bottom, 110).frame(maxWidth: 1100).frame(maxWidth: .infinity)
         }
-        .navigationTitle("资源库")
+        .navigationTitle("我的媒体")
+        .sheet(isPresented: $showingAdd) { AddServerView() }
         .background(Color(red: 0.035, green: 0.065, blue: 0.10))
         .onChange(of: selected) { _, _ in selectedLibrary = nil; libraryItems = []; libraryOffset = 0; canLoadMore = true }
         .task(id: selectedLibrary) {

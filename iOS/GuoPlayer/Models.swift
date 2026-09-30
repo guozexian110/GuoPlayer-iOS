@@ -176,8 +176,16 @@ struct PlaybackSource: Decodable, Identifiable {
         if height >= 700 { return "720P" }
         return container?.uppercased() ?? "视频"
     }
+    var requiresVLC: Bool {
+        let format = container?.lowercased() ?? ""
+        let video = mediaStreams.filter { $0.type == "Video" }.compactMap { $0.codec?.lowercased() }
+        let audio = mediaStreams.filter { $0.type == "Audio" }.compactMap { $0.codec?.lowercased() }
+        return !["mp4", "m4v", "mov", "ts", "mpegts", "hls", "m3u8"].contains(format)
+            || video.contains { !["h264", "hevc", "h265"].contains($0) }
+            || audio.contains { !["aac", "mp3", "ac3", "eac3", "alac"].contains($0) }
+    }
     var canDirectStreamOnApple: Bool {
-        supportsDirectStream == true && directStreamUrl?.isEmpty == false
+        supportsDirectStream == true && directStreamUrl?.isEmpty == false && !requiresVLC
     }
     var remoteHTTPURL: URL? {
         guard let path, let url = URL(string: path), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }

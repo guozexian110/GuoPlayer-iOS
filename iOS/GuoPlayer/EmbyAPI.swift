@@ -135,6 +135,19 @@ final class EmbyAPI {
         components.queryItems = query
         return components.url
     }
+    // VLC can decode the original container without a server transcode.
+    func originalStreamURLs(_ server: EmbyServer, token: String, item: MediaItem, source: PlaybackSource) -> [URL] {
+        var candidates: [URL] = []
+        if let value = source.directStreamUrl, let url = URL(string: value), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), !sameOrigin(url, server.baseURL) { candidates.append(url) }
+        if let remote = source.remoteHTTPURL { candidates.append(remote) }
+        let query = ["api_key": token, "MediaSourceId": source.id, "DeviceId": deviceId, "Static": "true"]
+        for root in roots(server.baseURL) {
+            var value = URLComponents(string: root + "/Videos/\(item.id)/stream")!
+            value.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
+            if let url = value.url, !candidates.contains(url) { candidates.append(url) }
+        }
+        return candidates
+    }
     func streamURL(_ server: EmbyServer, token: String, item: MediaItem, source: PlaybackSource, forceTranscode: Bool, audio: Int? = nil, subtitle: Int? = nil, sessionId: String? = nil, preferServerTranscodingURL: Bool = true) -> URL {
         if !forceTranscode,
            let value = source.directStreamUrl {

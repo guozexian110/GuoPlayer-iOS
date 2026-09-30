@@ -23,6 +23,10 @@ struct PlayerView: View {
     let preferredSourceId: String?
     @State private var current: MediaItem
     @State private var player = AVPlayer()
+    @StateObject private var vlc = VLCPlayback()
+    @State private var useVLC = false
+    @State private var attemptedVLC = false
+    @State private var scrubbing = false
     @State private var info: PlaybackInfo?
     @State private var source: PlaybackSource?
     @State private var forceTranscode = false
@@ -56,13 +60,16 @@ struct PlayerView: View {
                 HStack { Button { close() } label: { Label("返回", systemImage: "chevron.down") }; Spacer(); Text(current.name).lineLimit(1); Spacer(); Image(systemName: "airplayvideo") }
                     .font(.subheadline.bold()).padding(.horizontal)
                 ZStack {
-                    NativePlayer(player: player).frame(maxWidth: .infinity, maxHeight: .infinity)
+                    Group {
+                        if useVLC { VLCVideo(playback: vlc) }
+                        else { NativePlayer(player: player) }
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
                     if loading { ProgressView("正在连接视频").tint(.cyan).padding(18).background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 12)) }
                     if let error {
                         VStack(spacing: 12) {
                             Image(systemName: "exclamationmark.triangle").font(.title2)
                             Text(error).multilineTextAlignment(.center)
-                            Button("尝试 Emby 转码") { forceTranscode = true; attemptedAlternateHLS = false; urlVariantIndex = 0; startPlayback() }
+                            Button("使用 VLC 原片重试") { useVLC = true; attemptedVLC = true; forceTranscode = false; urlVariantIndex = 0; startPlayback() }
                                 .buttonStyle(.borderedProminent)
                         }
                         .padding(20).frame(maxWidth: 310)
@@ -70,19 +77,28 @@ struct PlayerView: View {
                     }
                 }
                 VStack(spacing: 10) {
-                    Slider(value: Binding(get: { position }, set: { position = $0 }), in: 0...max(duration, 1), onEditingChanged: { editing in if !editing { player.seek(to: CMTime(seconds: position, preferredTimescale: 600)); report("/Progress") } })
+                    Slider(value: Binding(get: { position }, set: { position = $0 }), in: 0...max(duration, 1), onEditingChanged: { editing in scrubbing = editing; if !editing { seek(position); report("/Progress") } })
                     HStack { Text(time(position)); Spacer(); Text(time(duration)) }.font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     HStack(spacing: 20) {
-                        Button { player.seek(to: CMTime(seconds: max(position - 10, 0), preferredTimescale: 600)) } label: { Image(systemName: "gobackward.10") }
-                        Button { player.rate == 0 ? player.play() : player.pause(); report("/Progress") } label: { Image(systemName: player.rate == 0 ? "play.fill" : "pause.fill") }
-                        Button { player.seek(to: CMTime(seconds: position + 10, preferredTimescale: 600)) } label: { Image(systemName: "goforward.10") }
-                        Menu { ForEach([0.5, 1.0, 1.25, 1.5, 2.0], id: \.self) { value in Button("\(value.formatted())×") { speed = Float(value); player.rate = speed } } } label: { Text("\(speed.formatted())×") }
+                        Button { seek(max(position - 10, 0)) } label: { Image(systemName: "gobackward.10") }
+                        Button { toggle(); report("/Progress") } label: { Image(systemName: isPaused ? "play.fill" : "pause.fill") }
+                        Button { seek(position + 10) } label: { Image(systemName: "goforward.10") }
+                        Menu { ForEach([0.5, 1.0, 1.25, 1.5, 2.0], id: \.self) { value in Button("\(value.formatted())×") { speed = Float(value); if useVLC { vlc.setRate(speed) } else { player.rate = speed } } } } label: { Text("\(speed.formatted())×") }
                         if let info {
-                            Menu { ForEach(info.mediaSources) { candidate in Button(candidate.container?.uppercased() ?? candidate.id) { source = candidate; urlVariantIndex = 0; chosenAudio = nil; chosenSubtitle = nil; attemptedFallback = false; attemptedAlternateHLS = false; forceTranscode = !(candidate.canDirectPlayOnApple || candidate.canDirectStreamOnApple || candidate.canTryRemoteOnApple); startPlayback() } } } label: { Image(systemName: "server.rack") }
+                            Menu { ForEach(info.mediaSources) { candidate in Button(candidate.container?.uppercased() ?? candidate.id) { source = candidate; urlVariantIndex = 0; chosenAudio = nil; chosenSubtitle = nil; attemptedFallback = false; attemptedAlternateHLS = false; useVLC = candidate.requiresVLC; attemptedVLC = useVLC; forceTranscode = false; startPlayback() } } } label: { Image(systemName: "server.rack") }
                         }
                         if nextEpisode != nil { Button { advance() } label: { Image(systemName: "forward.end.fill") } }
                     }.font(.title3).buttonStyle(.plain)
                     HStack(spacing: 22) {
+                        if useVLC {
+                            Menu {
+                                ForEach(vlc.audioTracks) { track in Button(track.name) { vlc.audio(track.id); report("/Progress") } }
+                            } label: { Label("音轨", systemImage: "waveform") }
+                            Menu {
+                                Button("关闭") { vlc.subtitle(-1); report("/Progress") }
+                                ForEach(vlc.subtitleTracks) { track in Button(track.name) { vlc.subtitle(track.id); report("/Progress") } }
+                            } label: { Label("字幕", systemImage: "captions.bubble") }
+                        } else {
                         Menu {
                             Button("自动") { chosenAudio = nil; urlVariantIndex = 0; startPlayback() }
                             ForEach(source?.mediaStreams.filter { $0.type == "Audio" } ?? []) { track in
@@ -96,14 +112,34 @@ struct PlayerView: View {
                                 Button(track.displayTitle ?? track.language ?? "字幕 \(track.index)") { chosenSubtitle = track.index; forceTranscode = true; attemptedAlternateHLS = false; urlVariantIndex = 0; startPlayback() }
                             }
                         } label: { Label("字幕", systemImage: "captions.bubble") }
-                        Button(forceTranscode ? "转码中" : "切换转码") { forceTranscode.toggle(); urlVariantIndex = 0; attemptedFallback = false; attemptedAlternateHLS = false; startPlayback() }
+                        }
+                        Button(forceTranscode ? "转码中" : "切换转码") { forceTranscode.toggle(); useVLC = !forceTranscode && source?.requiresVLC == true; urlVariantIndex = 0; attemptedFallback = false; attemptedAlternateHLS = false; startPlayback() }
                     }.font(.caption).buttonStyle(.bordered)
+                    Text("\(useVLC ? "VLC 原片直放" : (forceTranscode ? "AVPlayer 转码" : "AVPlayer")) · GuoPlayer \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")")
+                        .font(.caption2).foregroundStyle(.secondary)
                 }.padding(.horizontal, 18).padding(.bottom, 10)
             }
         }
         .task { await prepare() }
+        .onChange(of: vlc.state) { _, state in
+            guard useVLC else { return }
+            if state == "playing" {
+                loading = false; startupTask?.cancel()
+                if !hasStarted { hasStarted = true; report("") }
+            } else if state == "error" { handlePlaybackFailure("VLC 无法解码或读取此片源") }
+            else if state == "ended" { advance() }
+        }
+        .onChange(of: vlc.position) { _, value in
+            guard useVLC, hasStarted else { return }
+            if !scrubbing { position = value }; duration = vlc.duration
+        }
         .onDisappear { stop() }
     }
+    private var isPaused: Bool { useVLC ? !vlc.playing : player.rate == 0 }
+    private func seek(_ value: Double) {
+        if useVLC { vlc.seek(value) } else { player.seek(to: CMTime(seconds: value, preferredTimescale: 600)) }
+    }
+    private func toggle() { if useVLC { vlc.toggle() } else { player.rate == 0 ? player.playImmediately(atRate: speed) : player.pause() } }
     private var nextEpisode: MediaItem? {
         guard let index = playlist.firstIndex(of: current), index + 1 < playlist.count else { return nil }
         return playlist[index + 1]
@@ -122,7 +158,7 @@ struct PlayerView: View {
             let result = try await store.api.playback(server, token: token, item: current)
             guard let first = preferredSourceId.flatMap({ selected in result.mediaSources.first(where: { $0.id == selected }) }) ?? result.mediaSources.first else { throw EmbyError.message("服务器没有可播放片源") }
             info = result; source = first; urlVariantIndex = 0; attemptedFallback = false; attemptedAlternateHLS = false
-            forceTranscode = !(first.canDirectPlayOnApple || first.canDirectStreamOnApple || first.canTryRemoteOnApple)
+            useVLC = first.requiresVLC; attemptedVLC = useVLC; forceTranscode = false
             startPlayback()
         } catch { self.error = error.localizedDescription; loading = false }
     }
@@ -130,6 +166,8 @@ struct PlayerView: View {
         guard let server = store.server(for: current), let token = TokenVault.read(server.id), let source else { return }
         connectionTask?.cancel()
         connectionId = UUID()
+        if hasStarted { report("/Stopped") }; hasStarted = false
+        vlc.stop()
         player.pause(); player.replaceCurrentItem(with: nil)
         startupTask?.cancel()
         progressTask?.cancel()
@@ -138,9 +176,8 @@ struct PlayerView: View {
         statusObserver = nil
         loading = true
         error = nil
-        if hasStarted { report("/Stopped") }; hasStarted = false
         let resume = position > 0 ? position : Double(current.userData?.playbackPositionTicks ?? 0) / 10_000_000
-        let urls = store.api.streamURLs(server, token: token, item: current, source: source, forceTranscode: forceTranscode, audio: chosenAudio, subtitle: chosenSubtitle, sessionId: info?.playSessionId, preferServerTranscodingURL: !attemptedAlternateHLS)
+        let urls = playbackURLs(server, token: token, source: source)
         let generation = connectionId
         connectionTask = Task { @MainActor in
             do {
@@ -155,7 +192,27 @@ struct PlayerView: View {
             }
         }
     }
+    private func playbackURLs(_ server: EmbyServer, token: String, source: PlaybackSource) -> [URL] {
+        useVLC ? store.api.originalStreamURLs(server, token: token, item: current, source: source)
+            : store.api.streamURLs(server, token: token, item: current, source: source, forceTranscode: forceTranscode, audio: chosenAudio, subtitle: chosenSubtitle, sessionId: info?.playSessionId, preferServerTranscodingURL: !attemptedAlternateHLS)
+    }
     private func attachPlayback(url: URL, resume: Double) {
+        if useVLC {
+            vlc.open(url, headers: source?.requiredHttpHeaders ?? [:], resume: resume, speed: speed)
+            let generation = connectionId
+            startupTask = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(35))
+                guard !Task.isCancelled, generation == connectionId, loading else { return }
+                handlePlaybackFailure("VLC 视频连接超时")
+            }
+            progressTask = Task { @MainActor in
+                while !Task.isCancelled, generation == connectionId {
+                    try? await Task.sleep(for: .seconds(10))
+                    if !Task.isCancelled, generation == connectionId, hasStarted { report("/Progress") }
+                }
+            }
+            return
+        }
         let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": source?.requiredHttpHeaders ?? [:]])
         let playerItem = AVPlayerItem(asset: asset)
         player.replaceCurrentItem(with: playerItem)
@@ -184,7 +241,7 @@ struct PlayerView: View {
         }
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1, preferredTimescale: 2), queue: .main) { time in
-            if hasStarted && time.seconds.isFinite { position = time.seconds }
+            if hasStarted && !scrubbing && time.seconds.isFinite { position = time.seconds }
             let total = player.currentItem?.duration.seconds ?? 0
             duration = total.isFinite ? total : 0
         }
@@ -207,14 +264,15 @@ struct PlayerView: View {
         startupTask?.cancel()
         loading = false
         if let server = store.server(for: current), let token = TokenVault.read(server.id), let source,
-           urlVariantIndex + 1 < store.api.streamURLs(server, token: token, item: current, source: source,
-               forceTranscode: forceTranscode, audio: chosenAudio, subtitle: chosenSubtitle,
-               sessionId: info?.playSessionId, preferServerTranscodingURL: !attemptedAlternateHLS).count {
+           urlVariantIndex + 1 < playbackURLs(server, token: token, source: source).count {
             urlVariantIndex += 1
             startPlayback()
-        } else if !forceTranscode && !attemptedFallback {
+        } else if !attemptedVLC {
+            attemptedVLC = true; useVLC = true; forceTranscode = false
+            urlVariantIndex = 0; startPlayback()
+        } else if !forceTranscode && !attemptedFallback && source?.transcodingUrl != nil {
             attemptedFallback = true
-            forceTranscode = true
+            forceTranscode = true; useVLC = false
             urlVariantIndex = 0
             startPlayback()
         } else if forceTranscode && !attemptedAlternateHLS && source?.transcodingUrl != nil {
@@ -222,7 +280,7 @@ struct PlayerView: View {
             urlVariantIndex = 0
             startPlayback()
         } else {
-            player.pause()
+            player.pause(); vlc.stop()
             let guidance = detail?.contains("404") == true ? "请确认服务器地址、端口和子路径；该片源地址可能已失效。" : "请检查片源可用性与服务器转码权限。"
             error = "播放失败：\(detail ?? "服务器未返回可播放的视频")。\(guidance)"
         }
@@ -230,15 +288,16 @@ struct PlayerView: View {
     private func report(_ phase: String) {
         guard let server = store.server(for: current), let token = TokenVault.read(server.id), let source else { return }
         let ticks = Int64(max(position, 0) * 10_000_000)
-        let media = current; let session = info?.playSessionId; let paused = player.rate == 0; let method = forceTranscode ? "Transcode" : (source.supportsDirectPlay == true ? "DirectPlay" : "DirectStream")
+        let media = current; let session = info?.playSessionId; let paused = isPaused; let method = forceTranscode ? "Transcode" : (source.supportsDirectPlay == true ? "DirectPlay" : "DirectStream")
         Task { await store.api.report(server, token: token, item: media, source: source, session: session, position: ticks, phase: phase, paused: paused, method: method) }
     }
     private func advance() {
-        guard let next = nextEpisode else { return }
-        report("/Stopped"); current = next; info = nil; source = nil; position = 0; attemptedFallback = false; attemptedAlternateHLS = false; urlVariantIndex = 0; Task { await prepare() }
+        guard let next = nextEpisode else { report("/Stopped"); hasStarted = false; return }
+        report("/Stopped"); hasStarted = false; current = next; info = nil; source = nil; position = 0; attemptedFallback = false; attemptedAlternateHLS = false; urlVariantIndex = 0; Task { await prepare() }
     }
     private func stop() {
-        report("/Stopped")
+        if hasStarted { report("/Stopped") }; hasStarted = false
+        vlc.stop()
         connectionTask?.cancel(); connectionTask = nil; connectionId = UUID()
         startupTask?.cancel(); startupTask = nil
         progressTask?.cancel(); progressTask = nil

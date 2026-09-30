@@ -7,8 +7,13 @@ import Foundation
         decoder.userInfo[.serverId] = server.id
         let item = try decoder.decode(MediaItem.self, from: Data(#"{"Id":"video","Name":"Test","Type":"Movie"}"#.utf8))
         let source = try decoder.decode(PlaybackSource.self, from: Data(#"{"Id":"source","Container":"mkv","SupportsDirectPlay":true,"SupportsDirectStream":false,"TranscodingUrl":"/emby/Videos/video/master.m3u8?MediaSourceId=source","MediaStreams":[{"Index":0,"Type":"Video","Codec":"hevc","Height":2160},{"Index":1,"Type":"Audio","Codec":"dts"}]}"#.utf8))
-        precondition(!source.canDirectPlayOnApple)
+        precondition(!source.canDirectPlayOnApple && source.requiresVLC)
+        let noTranscode = try decoder.decode(PlaybackSource.self, from: Data(#"{"Id":"mkv","Container":"mkv","SupportsDirectPlay":true,"SupportsDirectStream":true,"DirectStreamUrl":"/emby/Videos/video/stream","MediaStreams":[{"Index":0,"Type":"Video","Codec":"hevc"},{"Index":1,"Type":"Audio","Codec":"flac"}]}"#.utf8))
+        precondition(noTranscode.requiresVLC && !noTranscode.canDirectStreamOnApple && noTranscode.transcodingUrl == nil)
         let api = EmbyAPI()
+        let originals = api.originalStreamURLs(server, token: "test-token", item: item, source: noTranscode)
+        precondition(originals.first?.path == "/emby/Videos/video/stream")
+        precondition(originals.allSatisfy { !$0.path.contains("m3u8") && URLComponents(url: $0, resolvingAgainstBaseURL: false)!.queryItems!.contains(URLQueryItem(name: "Static", value: "true")) })
         let serverURL = api.streamURL(server, token: "test-token", item: item, source: source, forceTranscode: true, audio: 1)
         let components = URLComponents(url: serverURL, resolvingAgainstBaseURL: false)!
         precondition(components.path == "/emby/Videos/video/master.m3u8")

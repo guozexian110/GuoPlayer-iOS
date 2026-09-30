@@ -5,7 +5,14 @@ import Combine
     @StateObject private var store = AppStore()
     var body: some Scene {
         WindowGroup {
-            RootView().environmentObject(store)
+            Group {
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--vlc-smoke") { VLCSmokeView() }
+                else { RootView() }
+                #else
+                RootView()
+                #endif
+            }.environmentObject(store)
                 .preferredColorScheme(.dark)
                 .tint(Color(red: 0.15, green: 0.84, blue: 0.91))
         }

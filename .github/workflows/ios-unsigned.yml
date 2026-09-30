@@ -37,8 +37,8 @@ jobs:
           import pathlib, plistlib, sys
           app = pathlib.Path(sys.argv[1])
           info = plistlib.loads((app / 'Info.plist').read_bytes())
-          assert info['CFBundleShortVersionString'] == '1.1.6'
-          assert info['CFBundleVersion'] == '9'
+          assert info['CFBundleShortVersionString'] == '1.1.7'
+          assert info['CFBundleVersion'] == '10'
           assert info['UILaunchStoryboardName'] == 'LaunchScreen'
           assert info['UIDeviceFamily'] == [1, 2]
           assert info['CFBundleIcons']['CFBundlePrimaryIcon']['CFBundleIconName'] == 'AppIcon'

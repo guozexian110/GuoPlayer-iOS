@@ -6,6 +6,7 @@ private let homeAccent = Color(red: 0.15, green: 0.84, blue: 0.91)
 struct TMDBDiscoverHome: View {
     @EnvironmentObject private var store: AppStore
     @EnvironmentObject private var chrome: AppChrome
+    @State private var heroIndex = 0
     private let columns = [GridItem(.adaptive(minimum: 290), spacing: 14)]
 
     var body: some View {
@@ -22,7 +23,13 @@ struct TMDBDiscoverHome: View {
                     if let error = store.tmdbError {
                         Text(error).font(.caption).foregroundStyle(.orange).padding(.horizontal, 18)
                     }
-                    if let hero = store.tmdbLists["day"]?.first { heroCard(hero) }
+                    if let heroes = store.tmdbLists["movie"], !heroes.isEmpty {
+                        TabView(selection: $heroIndex) {
+                            ForEach(Array(heroes.prefix(6).enumerated()), id: \.element.id) { index, title in
+                                heroCard(title).tag(index)
+                            }
+                        }.tabViewStyle(.page(indexDisplayMode: .always)).frame(height: 350)
+                    }
                     HStack(spacing: 8) {
                         Image(systemName: "arrow.clockwise").foregroundStyle(homeAccent)
                         Text("每次打开 App 时更新 · 影视资料来自 TMDb")
@@ -71,7 +78,7 @@ struct TMDBDiscoverHome: View {
         NavigationLink { TMDBTitleDetail(title: title) } label: {
             ZStack(alignment: .bottomLeading) {
                 TMDBImage(url: title.backdropURL)
-                    .frame(height: 260).frame(maxWidth: .infinity).clipped()
+                    .frame(height: 330).frame(maxWidth: .infinity).clipped()
                 LinearGradient(colors: [.clear, .black.opacity(0.92)], startPoint: .center, endPoint: .bottom)
                 VStack(alignment: .leading, spacing: 6) {
                     Text("GUOPLAYER · 今日精选").font(.caption.bold()).tracking(2).foregroundStyle(homeAccent)
@@ -83,7 +90,26 @@ struct TMDBDiscoverHome: View {
         }.buttonStyle(.plain).padding(.horizontal, 16)
     }
 
-    private func trendRail(_ label: String, key: String) -> some View { posterRail(label, key: key) }
+    private func trendRail(_ label: String, key: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(label).font(.title2.bold()).padding(.horizontal, 18)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 12) {
+                    ForEach(Array((store.tmdbLists[key] ?? []).prefix(20))) { title in
+                        NavigationLink { TMDBTitleDetail(title: title) } label: {
+                            VStack(alignment: .leading, spacing: 6) {
+                                TMDBImage(url: title.backdropURL).frame(width: 240, height: 135)
+                                    .clipShape(RoundedRectangle(cornerRadius: 15))
+                                Text(title.displayTitle).font(.subheadline).lineLimit(1)
+                                Text("\(title.year) · \(title.kind == "movie" ? "电影" : "剧集")")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }.frame(width: 240, alignment: .leading)
+                        }.buttonStyle(.plain)
+                    }
+                }.padding(.horizontal, 18)
+            }
+        }
+    }
 
     private var featureCards: some View {
         LazyVGrid(columns: columns, spacing: 14) {

@@ -1,7 +1,7 @@
 import Foundation
 
 @main struct PlaybackSmoke {
-    static func main() throws {
+    static func main() async throws {
         let server = EmbyServer(id: UUID(), name: "Test", baseURL: URL(string: "https://example.test/emby")!, userId: "user", username: "test")
         let decoder = JSONDecoder()
         decoder.userInfo[.serverId] = server.id
@@ -23,6 +23,55 @@ import Foundation
         precondition(candidates[0].path == "/emby/Videos/video/master.m3u8")
         precondition(candidates[1].path == "/Videos/video/master.m3u8")
         precondition(URLComponents(url: candidates[1], resolvingAgainstBaseURL: false)?.queryItems?.contains(URLQueryItem(name: "api_key", value: "test-token")) == true)
-        print("PlaybackSmoke: PASS")
+        let relative = try decoder.decode(PlaybackSource.self, from: Data(#"{"Id":"source","Container":"mkv","TranscodingUrl":"/Videos/video/master.m3u8?MediaSourceId=source","MediaStreams":[]}"#.utf8))
+        precondition(api.streamURL(server, token: "test-token", item: item, source: relative, forceTranscode: true).path == "/Videos/video/master.m3u8")
+        let mp4 = try decoder.decode(PlaybackSource.self, from: Data(#"{"Id":"mp4","Container":"mp4","SupportsDirectPlay":true,"MediaStreams":[]}"#.utf8))
+        precondition(api.streamURL(server, token: "test-token", item: item, source: mp4, forceTranscode: false).path == "/emby/Videos/video/stream")
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [MockEmby.self]
+        let integration = EmbyAPI(session: URLSession(configuration: configuration))
+        let rootServer = EmbyServer(id: server.id, name: "Mock", baseURL: URL(string: "https://example.test")!, userId: "user", username: "test")
+        let result = try await integration.playback(rootServer, token: "test-token", item: item)
+        precondition(result.playSessionId == "mock-session")
+        await integration.report(rootServer, token: "test-token", item: item, source: result.mediaSources[0], session: result.playSessionId, position: 20_000_000, phase: "/Progress")
+        precondition(MockEmby.sawProfile && MockEmby.sawProgress && MockEmby.sawFallback)
+        print("PlaybackSmoke: PASS (profile negotiation, 404 API fallback, URL resolution and progress request)")
     }
+}
+
+// Uses the real EmbyAPI with controlled HTTP responses, without any user credentials.
+final class MockEmby: URLProtocol {
+    static var sawProfile = false
+    static var sawProgress = false
+    static var sawFallback = false
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        var data = request.httpBody ?? Data()
+        if data.isEmpty, let stream = request.httpBodyStream {
+            stream.open(); defer { stream.close() }
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            while stream.hasBytesAvailable {
+                let count = stream.read(&buffer, maxLength: buffer.count)
+                if count <= 0 { break }
+                data.append(contentsOf: buffer.prefix(count))
+            }
+        }
+        let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        let path = request.url!.path
+        var status = 200
+        var response = Data()
+        if path.hasPrefix("/emby/") { status = 404 }
+        else if path.hasSuffix("PlaybackInfo") {
+            Self.sawFallback = true
+            Self.sawProfile = (body?["DeviceProfile"] as? [String: Any])?["TranscodingProfiles"] != nil && body?["IsPlayback"] as? Bool == true
+            response = Data(#"{"MediaSources":[{"Id":"source","Container":"mp4","SupportsDirectPlay":true,"MediaStreams":[]}],"PlaySessionId":"mock-session"}"#.utf8)
+        } else if path == "/Sessions/Playing/Progress" {
+            Self.sawProgress = body?["PositionTicks"] as? Int == 20_000_000 && body?["PlaySessionId"] as? String == "mock-session"
+        }
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: response)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
 }

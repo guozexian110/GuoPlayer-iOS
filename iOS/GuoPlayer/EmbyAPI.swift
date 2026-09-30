@@ -81,10 +81,17 @@ final class EmbyAPI {
         let data = try await request(server.baseURL, "Shows/\(seriesId)/Episodes", token: token, query: ["UserId": server.userId, "Fields": "Overview,UserData,RunTimeTicks", "Limit": "500"])
         return try decode(ItemsPage.self, data, serverId: server.id).items
     }
+    // Negotiate URLs for AVFoundation instead of relying on the server's default profile.
+    static var appleProfile: [String: Any] {
+        ["Name": "GuoPlayer AVFoundation", "MaxStreamingBitrate": 40_000_000,
+         "DirectPlayProfiles": [["Container": "mp4,m4v,mov", "Type": "Video", "VideoCodec": "h264,hevc", "AudioCodec": "aac,mp3,ac3,eac3,alac"]],
+         "TranscodingProfiles": [["Container": "ts", "Type": "Video", "Protocol": "hls", "VideoCodec": "h264", "AudioCodec": "aac", "Context": "Streaming", "MaxAudioChannels": "2", "MinSegments": 2, "BreakOnNonKeyFrames": false]],
+         "SubtitleProfiles": [["Format": "vtt", "Method": "External"], ["Format": "srt", "Method": "Encode"], ["Format": "ass", "Method": "Encode"], ["Format": "pgssub", "Method": "Encode"]]]
+    }
     func playback(_ server: EmbyServer, token: String, item: MediaItem) async throws -> PlaybackInfo {
         let path = "Items/\(item.id)/PlaybackInfo"
         let data: Data
-        do { data = try await request(server.baseURL, path, token: token, query: ["UserId": server.userId], method: "POST", body: ["UserId": server.userId, "StartTimeTicks": item.userData?.playbackPositionTicks ?? 0, "MaxStreamingBitrate": 40_000_000]) }
+        do { data = try await request(server.baseURL, path, token: token, query: ["UserId": server.userId], method: "POST", body: ["UserId": server.userId, "StartTimeTicks": item.userData?.playbackPositionTicks ?? 0, "MaxStreamingBitrate": 40_000_000, "IsPlayback": true, "AutoOpenLiveStream": true, "DeviceProfile": Self.appleProfile]) }
         catch { data = try await request(server.baseURL, path, token: token, query: ["UserId": server.userId]) }
         return try decode(PlaybackInfo.self, data)
     }
@@ -99,7 +106,9 @@ final class EmbyAPI {
         if let absolute = URL(string: value), absolute.scheme != nil { raw = value }
         else if value.hasPrefix("/") {
             let origin = "\(server.baseURL.scheme ?? "https")://\(server.baseURL.host ?? "")\(server.baseURL.port.map { ":\($0)" } ?? "")"
-            raw = value.lowercased().hasPrefix("/emby/") ? origin + value : apiRoot + value
+            // Leading slash is an origin-relative URL supplied by Emby.
+            // Prefix variants are handled by streamURLs when a proxy needs /emby.
+            raw = origin + value
         } else { raw = apiRoot + "/" + value }
         guard var components = URLComponents(string: raw) else { return nil }
         var query = components.queryItems ?? []
@@ -128,8 +137,7 @@ final class EmbyAPI {
         var query = ["api_key": token, "MediaSourceId": source.id, "Static": "true"]
         if let audio { query["AudioStreamIndex"] = "\(audio)" }
         if let subtitle { query["SubtitleStreamIndex"] = "\(subtitle)" }
-        let container = source.container?.lowercased() ?? "mp4"
-        return url(server, "Videos/\(item.id)/stream." + (container == "m4v" ? "mp4" : container), query: query)
+        return url(server, "Videos/\(item.id)/stream", query: query)
     }
     func streamURLs(_ server: EmbyServer, token: String, item: MediaItem, source: PlaybackSource, forceTranscode: Bool, audio: Int? = nil, subtitle: Int? = nil, sessionId: String? = nil, preferServerTranscodingURL: Bool = true) -> [URL] {
         let primary = streamURL(server, token: token, item: item, source: source, forceTranscode: forceTranscode,

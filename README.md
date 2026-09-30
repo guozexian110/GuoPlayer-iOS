@@ -53,3 +53,12 @@ xcodebuild -project iOS/GuoPlayer.xcodeproj -scheme GuoPlayer -configuration Rel
 ## 已知限制
 
 当前尚未在真实 iPhone/iPad 或用户的 Emby 服务器上验证。对于非 Apple 原生支持的容器，Emby 需要允许 HLS 转码。外挂字幕需要服务器提供可转码字幕轨道；内嵌轨道也取决于 AVPlayer 或转码结果。没有实现离线下载、弹幕、跨服务器进度双向同步。服务器媒体库大于首页第一页时，需要在资源库选中具体媒体库；尚无全库持续分页索引。
+
+
+### 1.1.7 (10)
+
+- TMDb 首页热门电影支持滑动轮播，今日与本周趋势采用横向背景海报、标题和年份卡片。需个人 TMDb 凭据；截图里的 Forward Widgets 不是本项目可调用的数据接口。
+- Emby PlaybackInfo 提交 AVFoundation DeviceProfile，协商 MP4 Direct Play 与 H.264/AAC HLS 转码。使用服务器返回的 origin-relative 视频地址，404 时尝试 Emby 路径兼容地址。
+- 静态播放使用 Emby /Videos/{id}/stream，避免依赖服务器对 stream.{container} 的兼容；播放切换保持进度，取消旧进度任务。
+- PlaybackSmoke 通过模拟 HTTP 测试能力协商、404 API 回退、视频 URL 和进度上报。模拟测试不代表实际 Emby 服务器或 iPhone 已播放成功。
+- 新提供的视频文件在指定位置不可读取，视频页面与动画仍待补充核对。

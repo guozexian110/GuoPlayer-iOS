@@ -38,6 +38,9 @@ struct PlayerView: View {
     @State private var failureObserver: NSObjectProtocol?
     @State private var statusObserver: NSKeyValueObservation?
     @State private var startupTask: Task<Void, Never>?
+    @State private var progressTask: Task<Void, Never>?
+    @State private var hasStarted = false
+    @State private var switchingPlayback = false
     @State private var attemptedFallback = false
     @State private var attemptedAlternateHLS = false
     @State private var urlVariantIndex = 0
@@ -124,18 +127,19 @@ struct PlayerView: View {
     private func startPlayback() {
         guard let server = store.server(for: current), let token = TokenVault.read(server.id), let source else { return }
         startupTask?.cancel()
+        progressTask?.cancel()
+        switchingPlayback = false
         statusObserver?.invalidate()
         statusObserver = nil
         loading = true
         error = nil
-        report("/Stopped")
+        if hasStarted { report("/Stopped") }; hasStarted = false
+        let resume = position > 0 ? position : Double(current.userData?.playbackPositionTicks ?? 0) / 10_000_000
         let urls = store.api.streamURLs(server, token: token, item: current, source: source, forceTranscode: forceTranscode, audio: chosenAudio, subtitle: chosenSubtitle, sessionId: info?.playSessionId, preferServerTranscodingURL: !attemptedAlternateHLS)
         let url = urls[min(urlVariantIndex, urls.count - 1)]
         let asset = AVURLAsset(url: url)
         let playerItem = AVPlayerItem(asset: asset)
         player.replaceCurrentItem(with: playerItem)
-        let resume = position > 0 ? position : Double(current.userData?.playbackPositionTicks ?? 0) / 10_000_000
-        if resume > 10 { player.seek(to: CMTime(seconds: resume, preferredTimescale: 600)) }
         player.play()
         statusObserver = playerItem.observe(\.status, options: [.initial, .new]) { observed, _ in
             DispatchQueue.main.async {
@@ -143,8 +147,9 @@ struct PlayerView: View {
                 switch observed.status {
                 case .readyToPlay:
                     loading = false
+                    if resume > 0 { player.seek(to: CMTime(seconds: resume, preferredTimescale: 600)) }
                     player.rate = speed
-                    report("")
+                    if !hasStarted { hasStarted = true; report("") }
                 case .failed:
                     handlePlaybackFailure(observed.error?.localizedDescription)
                 default: break
@@ -159,7 +164,7 @@ struct PlayerView: View {
         }
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 1, preferredTimescale: 2), queue: .main) { time in
-            position = time.seconds.isFinite ? time.seconds : 0
+            if hasStarted && time.seconds.isFinite { position = time.seconds }
             let total = player.currentItem?.duration.seconds ?? 0
             duration = total.isFinite ? total : 0
         }
@@ -174,9 +179,11 @@ struct PlayerView: View {
             let message = (notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error)?.localizedDescription
             handlePlaybackFailure(message)
         }
-        Task { while !Task.isCancelled && player.currentItem === playerItem { try? await Task.sleep(for: .seconds(10)); if player.currentItem === playerItem { report("/Progress") } } }
+        progressTask = Task { while !Task.isCancelled && player.currentItem === playerItem { try? await Task.sleep(for: .seconds(10)); if !Task.isCancelled && hasStarted && player.currentItem === playerItem { report("/Progress") } } }
     }
     private func handlePlaybackFailure(_ detail: String?) {
+        guard !switchingPlayback else { return }
+        switchingPlayback = true
         startupTask?.cancel()
         loading = false
         if let server = store.server(for: current), let token = TokenVault.read(server.id), let source,
@@ -212,6 +219,7 @@ struct PlayerView: View {
     private func stop() {
         report("/Stopped")
         startupTask?.cancel(); startupTask = nil
+        progressTask?.cancel(); progressTask = nil
         statusObserver?.invalidate(); statusObserver = nil
         player.pause(); player.replaceCurrentItem(with: nil)
         if let timeObserver { player.removeTimeObserver(timeObserver); self.timeObserver = nil }

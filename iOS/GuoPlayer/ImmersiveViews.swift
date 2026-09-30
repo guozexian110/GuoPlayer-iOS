@@ -47,6 +47,10 @@ struct ImmersiveDiscoverView: View {
     @EnvironmentObject private var store: AppStore
     @EnvironmentObject private var chrome: AppChrome
     @State private var heroIndex = 0
+    @State private var editingHome = false
+    @AppStorage("homeModuleOrder") private var moduleOrder = HomeLayoutEditor.defaultOrder
+    @AppStorage("homeHiddenModules") private var hiddenModules = ""
+
 
     private var featured: [MediaGroup] { Array(store.groups.prefix(8)) }
     private var topRated: [MediaGroup] {
@@ -81,20 +85,14 @@ struct ImmersiveDiscoverView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 27) {
-                        WideMediaRail(title: "继续观看", groups: store.resumeGroups, showsProgress: true)
-                        WideMediaRail(title: "我的媒体", groups: Array(store.groups.prefix(20)))
-                        WideMediaRail(title: "高分作品", groups: Array(topRated.prefix(20)))
-                        if let spotlight = store.groups.first(where: { $0.primary.type == "Movie" }) {
-                            DiscoverySpotlight(group: spotlight)
+                        ForEach(moduleOrder.split(separator: ",").map(String.init), id: \.self) { module in
+                            if !hiddenModules.split(separator: ",").contains(Substring(module)) { embyModule(module) }
                         }
-                        WideMediaRail(title: "最近添加", groups: Array(store.groups.prefix(20)))
-                        WideMediaRail(title: "电视剧与动漫", groups: store.groups.filter { $0.primary.type == "Series" })
-                        if !store.servers.isEmpty { serverRail }
-                        categoryRail
-                        if !topRated.isEmpty { rankedRail }
+                        Button { editingHome = true } label: { Label("编辑首页", systemImage: "slider.horizontal.3").frame(maxWidth: .infinity).padding(14) }
+                            .buttonStyle(.bordered).padding(.horizontal, 18)
                     }
                     .padding(.top, 18)
-                    .padding(.bottom, 120)
+                    .padding(.bottom, 30)
                     .frame(maxWidth: 1100)
                     .frame(maxWidth: .infinity)
                 }
@@ -103,12 +101,29 @@ struct ImmersiveDiscoverView: View {
             .ignoresSafeArea(edges: .top)
         }
         .background(canvas)
+        .sheet(isPresented: $editingHome) { NavigationStack { HomeLayoutEditor() } }
         .toolbar(.hidden, for: .navigationBar)
         .overlay(alignment: .top) {
             if let error = store.error {
                 Text(error).font(.caption).padding(9).background(.red.opacity(0.85), in: Capsule())
                     .padding(.top, 70).padding(.horizontal)
             }
+        }
+    }
+
+    @ViewBuilder private func embyModule(_ module: String) -> some View {
+        switch module {
+        case "resume": WideMediaRail(title: "继续观看", groups: store.resumeGroups, showsProgress: true)
+        case "day": WideMediaRail(title: "最近添加", groups: Array(store.groups.prefix(20)))
+        case "week": WideMediaRail(title: "高分作品", groups: Array(topRated.prefix(20)))
+        case "popular":
+            if let spotlight = store.groups.first(where: { $0.primary.type == "Movie" }) { DiscoverySpotlight(group: spotlight) }
+        case "now": WideMediaRail(title: "电影", groups: store.groups.filter { $0.primary.type == "Movie" })
+        case "anime": WideMediaRail(title: "电视剧与动漫", groups: store.groups.filter { $0.primary.type == "Series" })
+        case "providers": if !store.servers.isEmpty { serverRail }
+        case "genres": categoryRail
+        case "rankings": if !topRated.isEmpty { rankedRail }
+        default: EmptyView()
         }
     }
 

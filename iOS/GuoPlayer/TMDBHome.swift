@@ -240,6 +240,7 @@ struct HomeLayoutEditor: View {
                     var values = order.split(separator: ",").map(String.init); values.move(fromOffsets: indices, toOffset: destination); order = values.joined(separator: ",")
                 }
             }
+            Section { Text("配置 TMDb 时展示影视榜单；未配置时，同一布局展示 Emby 最近添加、高分作品与服务器。无数据的模块会隐藏。 ").font(.caption).foregroundStyle(.secondary) }
             Button("恢复默认布局") { order = Self.defaultOrder; hidden = "" }
         }.navigationTitle("编辑首页").navigationBarTitleDisplayMode(.inline)
             .environment(\.editMode, .constant(.active))

@@ -183,6 +183,11 @@ struct PlaybackSource: Decodable, Identifiable {
         guard let path, let url = URL(string: path), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
         return url
     }
+    var canTryRemoteOnApple: Bool {
+        guard remoteHTTPURL != nil else { return false }
+        return mediaStreams.filter { $0.type == "Video" }.compactMap { $0.codec?.lowercased() }.allSatisfy { ["h264", "hevc", "h265"].contains($0) }
+            && mediaStreams.filter { $0.type == "Audio" }.compactMap { $0.codec?.lowercased() }.allSatisfy { ["aac", "mp3", "ac3", "eac3", "alac"].contains($0) }
+    }
     var canDirectPlayOnApple: Bool {
         guard supportsDirectPlay == true, ["mp4", "m4v", "mov"].contains(container?.lowercased() ?? "") else { return false }
         let video = mediaStreams.filter { $0.type == "Video" }.compactMap { $0.codec?.lowercased() }

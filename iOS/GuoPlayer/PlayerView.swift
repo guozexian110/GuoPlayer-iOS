@@ -78,7 +78,7 @@ struct PlayerView: View {
                         Button { player.seek(to: CMTime(seconds: position + 10, preferredTimescale: 600)) } label: { Image(systemName: "goforward.10") }
                         Menu { ForEach([0.5, 1.0, 1.25, 1.5, 2.0], id: \.self) { value in Button("\(value.formatted())×") { speed = Float(value); player.rate = speed } } } label: { Text("\(speed.formatted())×") }
                         if let info {
-                            Menu { ForEach(info.mediaSources) { candidate in Button(candidate.container?.uppercased() ?? candidate.id) { source = candidate; urlVariantIndex = 0; chosenAudio = nil; chosenSubtitle = nil; attemptedFallback = false; attemptedAlternateHLS = false; forceTranscode = !(candidate.canDirectPlayOnApple || candidate.canDirectStreamOnApple); startPlayback() } } } label: { Image(systemName: "server.rack") }
+                            Menu { ForEach(info.mediaSources) { candidate in Button(candidate.container?.uppercased() ?? candidate.id) { source = candidate; urlVariantIndex = 0; chosenAudio = nil; chosenSubtitle = nil; attemptedFallback = false; attemptedAlternateHLS = false; forceTranscode = !(candidate.canDirectPlayOnApple || candidate.canDirectStreamOnApple || candidate.canTryRemoteOnApple); startPlayback() } } } label: { Image(systemName: "server.rack") }
                         }
                         if nextEpisode != nil { Button { advance() } label: { Image(systemName: "forward.end.fill") } }
                     }.font(.title3).buttonStyle(.plain)
@@ -122,7 +122,7 @@ struct PlayerView: View {
             let result = try await store.api.playback(server, token: token, item: current)
             guard let first = preferredSourceId.flatMap({ selected in result.mediaSources.first(where: { $0.id == selected }) }) ?? result.mediaSources.first else { throw EmbyError.message("服务器没有可播放片源") }
             info = result; source = first; urlVariantIndex = 0; attemptedFallback = false; attemptedAlternateHLS = false
-            forceTranscode = !(first.canDirectPlayOnApple || first.canDirectStreamOnApple)
+            forceTranscode = !(first.canDirectPlayOnApple || first.canDirectStreamOnApple || first.canTryRemoteOnApple)
             startPlayback()
         } catch { self.error = error.localizedDescription; loading = false }
     }

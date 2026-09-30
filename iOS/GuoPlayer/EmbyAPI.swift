@@ -140,19 +140,19 @@ final class EmbyAPI {
            let value = source.directStreamUrl {
             if let resolved = playbackURL(server, value: value, token: token, audio: audio, subtitle: subtitle) { return resolved }
         }
-        if !forceTranscode, source.canDirectPlayOnApple, let remote = source.remoteHTTPURL { return remote }
+        if !forceTranscode, (source.canDirectPlayOnApple || source.canTryRemoteOnApple), let remote = source.remoteHTTPURL { return remote }
         if forceTranscode && preferServerTranscodingURL, let value = source.transcodingUrl,
            let resolved = playbackURL(server, value: value, token: token, audio: audio, subtitle: subtitle) {
             return resolved
         }
         if forceTranscode {
-            var query = ["api_key": token, "MediaSourceId": source.id, "VideoCodec": "h264", "AudioCodec": "aac", "MaxStreamingBitrate": "40000000", "TranscodingContainer": "ts", "TranscodingProtocol": "hls", "RequireAvc": "true"]
+            var query = ["api_key": token, "MediaSourceId": source.id, "DeviceId": deviceId, "UserId": server.userId, "VideoCodec": "h264", "AudioCodec": "aac", "MaxStreamingBitrate": "40000000", "TranscodingContainer": "ts", "TranscodingProtocol": "hls", "RequireAvc": "true"]
             if let sessionId { query["PlaySessionId"] = sessionId }
             if let audio { query["AudioStreamIndex"] = "\(audio)" }
             if let subtitle { query["SubtitleStreamIndex"] = "\(subtitle)" }
             return url(server, "Videos/\(item.id)/master.m3u8", query: query)
         }
-        var query = ["api_key": token, "MediaSourceId": source.id, "Static": "true"]
+        var query = ["api_key": token, "MediaSourceId": source.id, "DeviceId": deviceId, "Static": "true"]
         if let audio { query["AudioStreamIndex"] = "\(audio)" }
         if let subtitle { query["SubtitleStreamIndex"] = "\(subtitle)" }
         return url(server, "Videos/\(item.id)/stream", query: query)
@@ -188,7 +188,7 @@ final class EmbyAPI {
         var failure = "没有有效的视频地址"
         for url in candidates {
             try Task.checkCancellation()
-            var request = URLRequest(url: url)
+            var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
             request.timeoutInterval = 12
             request.setValue("bytes=0-1", forHTTPHeaderField: "Range")
             request.setValue("GuoPlayer/iOS", forHTTPHeaderField: "User-Agent")

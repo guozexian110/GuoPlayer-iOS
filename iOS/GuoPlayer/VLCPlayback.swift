@@ -80,6 +80,7 @@ struct VLCTrack: Identifiable {
     func setRate(_ value: Float) { player.rate = value }
     func audio(_ id: Int32) { player.currentAudioTrackIndex = id }
     func subtitle(_ id: Int32) { player.currentVideoSubTitleIndex = id }
+    func externalSubtitle(_ url: URL) { _ = player.addPlaybackSlave(url, type: .subtitle, enforce: true) }
     func stop() {
         poll?.cancel(); poll = nil
         player.stop(); player.media = nil
@@ -130,6 +131,11 @@ struct VLCSmokeView: View {
                 result["seekPosition"] = playback.position
                 result["audioSelected"] = playback.player.currentAudioTrackIndex == lastAudio
                 result["subtitleSelected"] = playback.player.currentVideoSubTitleIndex >= 0
+                let external = url.deletingLastPathComponent().appendingPathComponent("fixture.srt")
+                playback.externalSubtitle(external)
+                try await Task.sleep(for: .seconds(1))
+                result["externalSubtitleTracks"] = playback.subtitleTracks.count
+                result["externalSubtitleSelected"] = playback.player.currentVideoSubTitleIndex >= 0 && playback.subtitleTracks.count >= 2
                 playback.toggle()
                 try await Task.sleep(for: .seconds(1))
                 result["paused"] = !playback.player.isPlaying
@@ -137,7 +143,7 @@ struct VLCSmokeView: View {
                 try await Task.sleep(for: .seconds(1))
                 result["resumed"] = playback.player.isPlaying
                 result["rate"] = playback.player.rate
-                result["pass"] = playback.position >= 8 && (result["audioSelected"] as? Bool == true) && (result["subtitleSelected"] as? Bool == true) && (result["paused"] as? Bool == true) && playback.player.isPlaying
+                result["pass"] = playback.position >= 8 && (result["audioSelected"] as? Bool == true) && (result["subtitleSelected"] as? Bool == true) && (result["externalSubtitleSelected"] as? Bool == true) && (result["paused"] as? Bool == true) && playback.player.isPlaying
             } catch { result["pass"] = false; result["error"] = error.localizedDescription }
             let output = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("vlc-smoke.json")
             try? JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: output)

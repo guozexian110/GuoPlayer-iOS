@@ -26,7 +26,7 @@ xcodebuild -project iOS/GuoPlayer.xcodeproj -scheme GuoPlayer -configuration Rel
 
 ## 已知限制
 
-当前尚未在真实 iPhone/iPad 或用户的 Emby 服务器上验证。MKV 和非 Apple 音轨通过 VLC 本地解码；无需服务器转码权限。VLC 当前支持内嵌字幕；AVPlayer 路径仍支持画中画，VLC 路径尚无画中画。外挂字幕需要服务器提供可转码字幕轨道；内嵌轨道也取决于 AVPlayer 或转码结果。没有实现离线下载、弹幕、跨服务器进度双向同步。服务器媒体库大于首页第一页时，需要在资源库选中具体媒体库；尚无全库持续分页索引。
+当前尚未在真实 iPhone/iPad 或用户的 Emby 服务器上验证。MKV 和非 Apple 音轨通过 VLC 本地解码；无需服务器转码权限。VLC 支持内嵌字幕和 Emby 提供的外挂字幕；AVPlayer 路径仍支持画中画，VLC 路径尚无画中画。外挂字幕需要服务器提供可转码字幕轨道；内嵌轨道也取决于 AVPlayer 或转码结果。没有实现离线下载、弹幕、跨服务器进度双向同步。服务器媒体库大于首页第一页时，需要在资源库选中具体媒体库；尚无全库持续分页索引。
 
 
 ### 1.1.7 (10)
@@ -52,6 +52,6 @@ macOS CI 截图使用 --layout-preview 的虚构内容检查排版，仅 Debug �
 
 ### 1.2.0 (13): MKV 原片播放
 
-真实服务器诊断发现原始文件 HTTP 206、HEVC/MKV 搭配 FLAC 或 TrueHD，但用户策略禁止视频及音频转码。旧版 AVPlayer 原片与转码回退均不适用。新版按容器/编码选择 VLC 原片播放；原生格式保留 AVPlayer，失败时先试 VLC，再在服务器确实提供 TranscodingUrl 时回退转码。VLC 音轨及内嵌字幕使用实际播放器 track ID，本地切换，不向服务器要求烧录字幕或转换音轨。支持播放/暂停、续播、拖动、倍速、快进退和剧集自动下一集，沿用 Emby 进度上报。
+真实服务器诊断发现原始文件 HTTP 206、HEVC/MKV 搭配 FLAC 或 TrueHD，但用户策略禁止视频及音频转码。旧版 AVPlayer 原片与转码回退均不适用。新版按容器/编码选择 VLC 原片播放；原生格式保留 AVPlayer，失败时先试 VLC，再在服务器确实提供 TranscodingUrl 时回退转码。VLC 音轨及内嵌字幕使用实际播放器 track ID，外挂字幕使用 Emby DeliveryUrl 或字幕下载接口，本地切换，不向服务器要求烧录字幕或转换音轨。支持播放/暂停、续播、拖动、倍速、快进退和剧集自动下一集，沿用 Emby 进度上报。
 
 依赖固定为 VLCKit-SPM 3.6.0，SPM 校验二进制 SHA256，无 Apple Team 或证书。许可及替换/重新链接说明见 iOS/THIRD_PARTY_NOTICES.md。CI 新增 iPhone 模拟器 MKV/HEVC + 双 FLAC 音轨 + SRT 字幕的真实解码、画面输出、音轨/字幕选择、拖动与暂停续播检查；不是只判断 HTTP 200。真实 iPhone 尚待安装后验证，不把模拟器结果当作用户真机播放成功。

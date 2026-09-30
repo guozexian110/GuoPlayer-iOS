@@ -41,6 +41,8 @@ jobs:
           path: |
             ${{ runner.temp }}/vlc-playback-test/vlc-smoke.json
             ${{ runner.temp }}/vlc-playback-test/*.png
+            ${{ runner.temp }}/vlc-playback-test/*.log
+            ${{ runner.temp }}/vlc-playback-test/*.ips
           if-no-files-found: ignore
       - name: Build unsigned iPhone and iPad app
         run: |

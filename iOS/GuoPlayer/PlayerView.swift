@@ -85,7 +85,7 @@ struct PlayerView: View {
                         Button { seek(position + 10) } label: { Image(systemName: "goforward.10") }
                         Menu { ForEach([0.5, 1.0, 1.25, 1.5, 2.0], id: \.self) { value in Button("\(value.formatted())×") { speed = Float(value); if useVLC { vlc.setRate(speed) } else { player.rate = speed } } } } label: { Text("\(speed.formatted())×") }
                         if let info {
-                            Menu { ForEach(info.mediaSources) { candidate in Button(candidate.container?.uppercased() ?? candidate.id) { source = candidate; urlVariantIndex = 0; chosenAudio = nil; chosenSubtitle = nil; attemptedFallback = false; attemptedAlternateHLS = false; useVLC = candidate.requiresVLC; attemptedVLC = useVLC; forceTranscode = false; startPlayback() } } } label: { Image(systemName: "server.rack") }
+                            Menu { ForEach(info.mediaSources) { candidate in Button(candidate.container?.uppercased() ?? candidate.id) { switchSource(candidate) } } } label: { Image(systemName: "server.rack") }
                         }
                         if nextEpisode != nil { Button { advance() } label: { Image(systemName: "forward.end.fill") } }
                     }.font(.title3).buttonStyle(.plain)
@@ -97,6 +97,13 @@ struct PlayerView: View {
                             Menu {
                                 Button("关闭") { vlc.subtitle(-1); report("/Progress") }
                                 ForEach(vlc.subtitleTracks) { track in Button(track.name) { vlc.subtitle(track.id); report("/Progress") } }
+                                ForEach(source?.mediaStreams.filter { $0.type == "Subtitle" && $0.isExternal == true } ?? []) { track in
+                                    Button(track.displayTitle ?? track.language ?? "外挂字幕 \(track.index)") {
+                                        if let server = store.server(for: current), let token = TokenVault.read(server.id), let source {
+                                            vlc.externalSubtitle(store.api.subtitleURL(server, token: token, item: current, source: source, track: track))
+                                        }
+                                    }
+                                }
                             } label: { Label("字幕", systemImage: "captions.bubble") }
                         } else {
                         Menu {
@@ -134,6 +141,13 @@ struct PlayerView: View {
             if !scrubbing { position = value }; duration = vlc.duration
         }
         .onDisappear { stop() }
+    }
+    private func switchSource(_ candidate: PlaybackSource) {
+        if hasStarted { report("/Stopped") }; hasStarted = false
+        source = candidate; urlVariantIndex = 0; chosenAudio = nil; chosenSubtitle = nil
+        attemptedFallback = false; attemptedAlternateHLS = false
+        useVLC = candidate.requiresVLC; attemptedVLC = useVLC; forceTranscode = false
+        startPlayback()
     }
     private var isPaused: Bool { useVLC ? !vlc.playing : player.rate == 0 }
     private func seek(_ value: Double) {
@@ -213,7 +227,9 @@ struct PlayerView: View {
             }
             return
         }
-        let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": source?.requiredHttpHeaders ?? [:]])
+        var headers = source?.requiredHttpHeaders ?? [:]
+        if !headers.keys.contains(where: { $0.lowercased() == "user-agent" }) { headers["User-Agent"] = "GuoPlayer/iOS" }
+        let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
         let playerItem = AVPlayerItem(asset: asset)
         player.replaceCurrentItem(with: playerItem)
         player.play()
@@ -293,7 +309,7 @@ struct PlayerView: View {
     }
     private func advance() {
         guard let next = nextEpisode else { report("/Stopped"); hasStarted = false; return }
-        report("/Stopped"); hasStarted = false; current = next; info = nil; source = nil; position = 0; attemptedFallback = false; attemptedAlternateHLS = false; urlVariantIndex = 0; Task { await prepare() }
+        stop(); current = next; info = nil; source = nil; position = 0; attemptedFallback = false; attemptedAlternateHLS = false; urlVariantIndex = 0; Task { await prepare() }
     }
     private func stop() {
         if hasStarted { report("/Stopped") }; hasStarted = false

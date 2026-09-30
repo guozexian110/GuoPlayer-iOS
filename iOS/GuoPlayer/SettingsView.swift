@@ -35,6 +35,19 @@ struct ServerSettingsView: View {
                 }.onDelete { offsets in for index in offsets { store.remove(store.servers[index]) } }
                 Button { showingAdd = true } label: { Label("添加 Emby 服务器", systemImage: "plus.circle.fill") }
             }
+            Section("关于") {
+                Text("GuoPlayer \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""))")
+                NavigationLink("VLC 开源组件许可") {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("VideoLAN VLCKit / libVLC · LGPL 2.1 or later")
+                            Link("源码与重新编译说明", destination: URL(string: "https://github.com/guozexian110/GuoPlayer-iOS/blob/main/iOS/THIRD_PARTY_NOTICES.md")!)
+                            Text((Bundle.main.url(forResource: "LICENSE-VLCKit", withExtension: "txt").flatMap { try? String(contentsOf: $0, encoding: .utf8) }) ?? "LGPL 2.1 or later")
+                                .font(.caption).textSelection(.enabled)
+                        }.padding()
+                    }.navigationTitle("开源许可")
+                }
+            }
             Section { Text("账户密码仅用于登录，不会保存。登录令牌保存在本机 Keychain。应用不包含任何媒体源。") }
         }
         .navigationTitle("设置")

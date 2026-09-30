@@ -136,6 +136,12 @@ final class EmbyAPI {
         return components.url
     }
     // VLC can decode the original container without a server transcode.
+    func subtitleURL(_ server: EmbyServer, token: String, item: MediaItem, source: PlaybackSource, track: MediaStream) -> URL {
+        if let delivery = track.deliveryUrl, let resolved = playbackURL(server, value: delivery, token: token, audio: nil, subtitle: nil) { return resolved }
+        let codec = track.codec?.lowercased() ?? "srt"
+        let format = ["srt", "ass", "ssa", "vtt"].contains(codec) ? codec : "srt"
+        return url(server, "Videos/\(item.id)/\(source.id)/Subtitles/\(track.index)/Stream.\(format)", query: ["api_key": token])
+    }
     func originalStreamURLs(_ server: EmbyServer, token: String, item: MediaItem, source: PlaybackSource) -> [URL] {
         var candidates: [URL] = []
         if let value = source.directStreamUrl, let url = URL(string: value), ["http", "https"].contains(url.scheme?.lowercased() ?? ""), !sameOrigin(url, server.baseURL) { candidates.append(url) }
@@ -144,6 +150,12 @@ final class EmbyAPI {
         for root in roots(server.baseURL) {
             var value = URLComponents(string: root + "/Videos/\(item.id)/stream")!
             value.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
+            if let url = value.url, !candidates.contains(url) { candidates.append(url) }
+        }
+        for candidate in Array(candidates) where sameOrigin(candidate, server.baseURL) && candidate.path.hasSuffix("/stream") {
+            var value = URLComponents(url: candidate, resolvingAgainstBaseURL: false)!
+            let ext = source.container?.lowercased() ?? "mp4"
+            value.path += "." + (ext == "m4v" ? "mp4" : ext)
             if let url = value.url, !candidates.contains(url) { candidates.append(url) }
         }
         return candidates

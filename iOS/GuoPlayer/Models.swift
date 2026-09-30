@@ -210,10 +210,11 @@ struct MediaStream: Decodable, Identifiable {
     let displayTitle: String?
     let language: String?
     let isExternal: Bool?
+    let deliveryUrl: String?
     let width: Int?
     let height: Int?
     let codec: String?
-    enum CodingKeys: String, CodingKey { case index = "Index", type = "Type", displayTitle = "DisplayTitle", language = "Language", isExternal = "IsExternal", width = "Width", height = "Height", codec = "Codec" }
+    enum CodingKeys: String, CodingKey { case index = "Index", type = "Type", displayTitle = "DisplayTitle", language = "Language", isExternal = "IsExternal", deliveryUrl = "DeliveryUrl", width = "Width", height = "Height", codec = "Codec" }
     var id: Int { index }
 }
 

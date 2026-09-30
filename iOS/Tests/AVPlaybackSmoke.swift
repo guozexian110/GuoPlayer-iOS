@@ -30,7 +30,7 @@ import CoreVideo
         guard writer.status == .completed else { throw writer.error ?? EmbyError.message("Fixture writing failed") }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["python3", "-m", "http.server", "18764", "--bind", "127.0.0.1", "--directory", folder.path]
+        process.arguments = ["python3", "iOS/Tests/serve_range.py", folder.path]
         try process.run()
         defer { process.terminate() }
         try await Task.sleep(for: .seconds(1))

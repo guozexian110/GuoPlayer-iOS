@@ -96,7 +96,11 @@ struct VLCVideo: UIViewRepresentable {
         playback.player.drawable = view
         return view
     }
-    func updateUIView(_ view: UIView, context: Context) { playback.player.drawable = view }
+    func updateUIView(_ view: UIView, context: Context) {
+        // Reattaching an active video surface on every published clock tick can
+        // block libVLC's output queue while it is waiting on UIKit.
+        if (playback.player.drawable as? UIView) !== view { playback.player.drawable = view }
+    }
     static func dismantleUIView(_ view: UIView, coordinator: ()) { }
 }
 
@@ -106,15 +110,20 @@ struct VLCSmokeView: View {
     @StateObject private var playback = VLCPlayback()
     var body: some View {
         VLCVideo(playback: playback).ignoresSafeArea().task {
+            print("VLC smoke: task started")
             var result: [String: Any] = [:]
             do {
                 guard let value = ProcessInfo.processInfo.environment["GUOPLAYER_VLC_TEST_URL"], let url = URL(string: value) else { throw EmbyError.message("Missing test URL") }
+                print("VLC smoke: opening fixture")
                 playback.open(url, headers: [:], resume: 0, speed: 1)
+                print("VLC smoke: waiting for frames")
                 for _ in 0..<160 {
                     try await Task.sleep(for: .milliseconds(250))
                     if playback.position > 2 && (playback.player.media?.statistics.decodedVideo ?? 0) > 5 { break }
                 }
-                let stats = playback.player.media!.statistics
+                print("VLC smoke: decode wait finished")
+                guard let media = playback.player.media else { throw EmbyError.message("VLC has no media") }
+                let stats = media.statistics
                 result["decodedVideo"] = stats.decodedVideo
                 result["decodedAudio"] = stats.decodedAudio
                 result["displayedPictures"] = stats.displayedPictures
@@ -146,7 +155,10 @@ struct VLCSmokeView: View {
                 result["pass"] = playback.position >= 8 && (result["audioSelected"] as? Bool == true) && (result["subtitleSelected"] as? Bool == true) && (result["externalSubtitleSelected"] as? Bool == true) && (result["paused"] as? Bool == true) && playback.player.isPlaying
             } catch { result["pass"] = false; result["error"] = error.localizedDescription }
             let output = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("vlc-smoke.json")
-            try? JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: output)
+            do {
+                try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: output)
+                print("VLC smoke: report saved")
+            } catch { print("VLC smoke: report serialization failed \(error)") }
         }
     }
 }

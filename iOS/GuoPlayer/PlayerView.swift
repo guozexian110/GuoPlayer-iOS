@@ -38,6 +38,8 @@ struct PlayerView: View {
     @State private var failureObserver: NSObjectProtocol?
     @State private var statusObserver: NSKeyValueObservation?
     @State private var startupTask: Task<Void, Never>?
+    @State private var connectionTask: Task<Void, Never>?
+    @State private var connectionId = UUID()
     @State private var progressTask: Task<Void, Never>?
     @State private var hasStarted = false
     @State private var switchingPlayback = false
@@ -60,7 +62,7 @@ struct PlayerView: View {
                         VStack(spacing: 12) {
                             Image(systemName: "exclamationmark.triangle").font(.title2)
                             Text(error).multilineTextAlignment(.center)
-                            Button("尝试 Emby 转码") { forceTranscode = true; attemptedAlternateHLS = false; startPlayback() }
+                            Button("尝试 Emby 转码") { forceTranscode = true; attemptedAlternateHLS = false; urlVariantIndex = 0; startPlayback() }
                                 .buttonStyle(.borderedProminent)
                         }
                         .padding(20).frame(maxWidth: 310)
@@ -76,25 +78,25 @@ struct PlayerView: View {
                         Button { player.seek(to: CMTime(seconds: position + 10, preferredTimescale: 600)) } label: { Image(systemName: "goforward.10") }
                         Menu { ForEach([0.5, 1.0, 1.25, 1.5, 2.0], id: \.self) { value in Button("\(value.formatted())×") { speed = Float(value); player.rate = speed } } } label: { Text("\(speed.formatted())×") }
                         if let info {
-                            Menu { ForEach(info.mediaSources) { candidate in Button(candidate.container?.uppercased() ?? candidate.id) { source = candidate; attemptedFallback = false; attemptedAlternateHLS = false; forceTranscode = !(candidate.canDirectPlayOnApple || candidate.canDirectStreamOnApple); startPlayback() } } } label: { Image(systemName: "server.rack") }
+                            Menu { ForEach(info.mediaSources) { candidate in Button(candidate.container?.uppercased() ?? candidate.id) { source = candidate; urlVariantIndex = 0; chosenAudio = nil; chosenSubtitle = nil; attemptedFallback = false; attemptedAlternateHLS = false; forceTranscode = !(candidate.canDirectPlayOnApple || candidate.canDirectStreamOnApple); startPlayback() } } } label: { Image(systemName: "server.rack") }
                         }
                         if nextEpisode != nil { Button { advance() } label: { Image(systemName: "forward.end.fill") } }
                     }.font(.title3).buttonStyle(.plain)
                     HStack(spacing: 22) {
                         Menu {
-                            Button("自动") { chosenAudio = nil; startPlayback() }
+                            Button("自动") { chosenAudio = nil; urlVariantIndex = 0; startPlayback() }
                             ForEach(source?.mediaStreams.filter { $0.type == "Audio" } ?? []) { track in
-                                Button(track.displayTitle ?? track.language ?? "音轨 \(track.index)") { chosenAudio = track.index; forceTranscode = true; attemptedAlternateHLS = false; startPlayback() }
+                                Button(track.displayTitle ?? track.language ?? "音轨 \(track.index)") { chosenAudio = track.index; forceTranscode = true; attemptedAlternateHLS = false; urlVariantIndex = 0; startPlayback() }
                             }
                         } label: { Label("音轨", systemImage: "waveform") }
                         Menu {
-                            Button("关闭") { chosenSubtitle = -1; startPlayback() }
-                            Button("自动") { chosenSubtitle = nil; startPlayback() }
+                            Button("关闭") { chosenSubtitle = -1; urlVariantIndex = 0; startPlayback() }
+                            Button("自动") { chosenSubtitle = nil; urlVariantIndex = 0; startPlayback() }
                             ForEach(source?.mediaStreams.filter { $0.type == "Subtitle" } ?? []) { track in
-                                Button(track.displayTitle ?? track.language ?? "字幕 \(track.index)") { chosenSubtitle = track.index; forceTranscode = true; attemptedAlternateHLS = false; startPlayback() }
+                                Button(track.displayTitle ?? track.language ?? "字幕 \(track.index)") { chosenSubtitle = track.index; forceTranscode = true; attemptedAlternateHLS = false; urlVariantIndex = 0; startPlayback() }
                             }
                         } label: { Label("字幕", systemImage: "captions.bubble") }
-                        Button(forceTranscode ? "转码中" : "切换转码") { forceTranscode.toggle(); attemptedFallback = false; attemptedAlternateHLS = false; startPlayback() }
+                        Button(forceTranscode ? "转码中" : "切换转码") { forceTranscode.toggle(); urlVariantIndex = 0; attemptedFallback = false; attemptedAlternateHLS = false; startPlayback() }
                     }.font(.caption).buttonStyle(.bordered)
                 }.padding(.horizontal, 18).padding(.bottom, 10)
             }
@@ -126,6 +128,9 @@ struct PlayerView: View {
     }
     private func startPlayback() {
         guard let server = store.server(for: current), let token = TokenVault.read(server.id), let source else { return }
+        connectionTask?.cancel()
+        connectionId = UUID()
+        player.pause(); player.replaceCurrentItem(with: nil)
         startupTask?.cancel()
         progressTask?.cancel()
         switchingPlayback = false
@@ -136,8 +141,22 @@ struct PlayerView: View {
         if hasStarted { report("/Stopped") }; hasStarted = false
         let resume = position > 0 ? position : Double(current.userData?.playbackPositionTicks ?? 0) / 10_000_000
         let urls = store.api.streamURLs(server, token: token, item: current, source: source, forceTranscode: forceTranscode, audio: chosenAudio, subtitle: chosenSubtitle, sessionId: info?.playSessionId, preferServerTranscodingURL: !attemptedAlternateHLS)
-        let url = urls[min(urlVariantIndex, urls.count - 1)]
-        let asset = AVURLAsset(url: url)
+        let generation = connectionId
+        connectionTask = Task { @MainActor in
+            do {
+                let url = try await store.api.resolveStreamURL(Array(urls.dropFirst(min(urlVariantIndex, urls.count - 1))), headers: source.requiredHttpHeaders ?? [:])
+                guard !Task.isCancelled, generation == connectionId else { return }
+                urlVariantIndex = urls.firstIndex(of: url) ?? 0
+                attachPlayback(url: url, resume: resume)
+            } catch {
+                guard !Task.isCancelled, generation == connectionId else { return }
+                urlVariantIndex = urls.count - 1
+                handlePlaybackFailure(error.localizedDescription)
+            }
+        }
+    }
+    private func attachPlayback(url: URL, resume: Double) {
+        let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": source?.requiredHttpHeaders ?? [:]])
         let playerItem = AVPlayerItem(asset: asset)
         player.replaceCurrentItem(with: playerItem)
         player.play()
@@ -151,7 +170,8 @@ struct PlayerView: View {
                     player.rate = speed
                     if !hasStarted { hasStarted = true; report("") }
                 case .failed:
-                    handlePlaybackFailure(observed.error?.localizedDescription)
+                    let status = observed.errorLog()?.events.last?.errorStatusCode ?? 0
+                    handlePlaybackFailure((400...599).contains(status) ? "视频服务器返回 HTTP \(status)" : observed.error?.localizedDescription)
                 default: break
                 }
             }
@@ -203,7 +223,8 @@ struct PlayerView: View {
             startPlayback()
         } else {
             player.pause()
-            error = "播放失败：\(detail ?? "服务器未返回可播放的视频")。请检查服务器转码权限或更换片源。"
+            let guidance = detail?.contains("404") == true ? "请确认服务器地址、端口和子路径；该片源地址可能已失效。" : "请检查片源可用性与服务器转码权限。"
+            error = "播放失败：\(detail ?? "服务器未返回可播放的视频")。\(guidance)"
         }
     }
     private func report(_ phase: String) {
@@ -218,6 +239,7 @@ struct PlayerView: View {
     }
     private func stop() {
         report("/Stopped")
+        connectionTask?.cancel(); connectionTask = nil; connectionId = UUID()
         startupTask?.cancel(); startupTask = nil
         progressTask?.cancel(); progressTask = nil
         statusObserver?.invalidate(); statusObserver = nil

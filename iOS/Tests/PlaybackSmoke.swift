@@ -27,12 +27,35 @@ import Foundation
         precondition(api.streamURL(server, token: "test-token", item: item, source: relative, forceTranscode: true).path == "/Videos/video/master.m3u8")
         let mp4 = try decoder.decode(PlaybackSource.self, from: Data(#"{"Id":"mp4","Container":"mp4","SupportsDirectPlay":true,"MediaStreams":[]}"#.utf8))
         precondition(api.streamURL(server, token: "test-token", item: item, source: mp4, forceTranscode: false).path == "/emby/Videos/video/stream")
+        let proxied = EmbyServer(id: server.id, name: "Proxy", baseURL: URL(string: "https://example.test/proxy/emby")!, userId: "user", username: "test")
+        let proxyURLs = api.streamURLs(proxied, token: "test-token", item: item, source: source, forceTranscode: true)
+        precondition(proxyURLs.map(\.path).contains("/proxy/emby/Videos/video/master.m3u8"))
+        precondition(proxyURLs.map(\.path).contains("/proxy/Videos/video/master.m3u8"))
+        let external = try decoder.decode(PlaybackSource.self, from: Data(#"{"Id":"external","Container":"mp4","DirectStreamUrl":"https://cdn.test/movie.mp4?signature=abc%2Fdef&expires=123","MediaStreams":[]}"#.utf8))
+        let externalURLs = api.streamURLs(server, token: "private-emby-token", item: item, source: external, forceTranscode: false, audio: 1, subtitle: 2)
+        precondition(externalURLs.count == 1)
+        precondition(externalURLs[0].absoluteString == "https://cdn.test/movie.mp4?signature=abc%2Fdef&expires=123")
+        let addedPort = try EmbyServer.normalize("example.test/proxy", port: "8096")
+        precondition(addedPort.absoluteString == "http://example.test:8096/proxy")
+        let replacedPort = try EmbyServer.normalize("https://example.test:8920/emby", port: "443")
+        precondition(replacedPort.absoluteString == "https://example.test:443/emby")
+        let preservedPort = try EmbyServer.normalize("https://example.test:8920/emby")
+        precondition(preservedPort.port == 8920)
+        let ipv6 = try EmbyServer.normalize("http://[::1]/emby", port: "8096")
+        precondition(ipv6.host != nil)
+        let fields = EmbyServer.addressFields(URL(string: "https://example.test:8920/proxy/emby")!)
+        precondition(fields.address == "https://example.test/proxy/emby" && fields.port == "8920")
+        for port in ["0", "65536", "abc", "-1"] {
+            do { _ = try EmbyServer.normalize("https://example.test", port: port); fatalError("Invalid port accepted") }
+            catch { /* expected */ }
+        }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [MockEmby.self]
         let integration = EmbyAPI(session: URLSession(configuration: configuration))
         let rootServer = EmbyServer(id: server.id, name: "Mock", baseURL: URL(string: "https://example.test")!, userId: "user", username: "test")
         let result = try await integration.playback(rootServer, token: "test-token", item: item)
         precondition(result.playSessionId == "mock-session")
+        precondition(integration.url(rootServer, "Videos/video/stream").path == "/Videos/video/stream")
         await integration.report(rootServer, token: "test-token", item: item, source: result.mediaSources[0], session: result.playSessionId, position: 20_000_000, phase: "/Progress")
         precondition(MockEmby.sawProfile && MockEmby.sawProgress && MockEmby.sawFallback)
         print("PlaybackSmoke: PASS (profile negotiation, 404 API fallback, URL resolution and progress request)")

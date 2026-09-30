@@ -34,12 +34,16 @@ import CoreVideo
         try process.run()
         defer { process.terminate() }
         try await Task.sleep(for: .seconds(1))
-        let server = EmbyServer(id: UUID(), name: "Fixture", baseURL: URL(string: "http://127.0.0.1:18764")!, userId: "mock", username: "mock")
+        let server = EmbyServer(id: UUID(), name: "Fixture", baseURL: URL(string: "http://127.0.0.1:18764/gateway")!, userId: "mock", username: "mock")
         let decoder = JSONDecoder()
         decoder.userInfo[.serverId] = server.id
         let item = try decoder.decode(MediaItem.self, from: Data(#"{"Id":"fixture","Name":"Fixture","Type":"Movie"}"#.utf8))
-        let source = try decoder.decode(PlaybackSource.self, from: Data(#"{"Id":"source","Container":"mp4","SupportsDirectPlay":false,"SupportsDirectStream":true,"DirectStreamUrl":"http://127.0.0.1:18764/fixture.mp4","MediaStreams":[]}"#.utf8))
-        let url = EmbyAPI().streamURL(server, token: "fixture-token", item: item, source: source, forceTranscode: false)
+        let api = EmbyAPI()
+        let info = try await api.playback(server, token: "fixture-token", item: item)
+        let source = info.mediaSources[0]
+        let urls = api.streamURLs(server, token: "fixture-token", item: item, source: source, forceTranscode: false)
+        let url = try await api.resolveStreamURL(urls)
+        guard url.path == "/gateway/Videos/fixture/stream.mp4" else { throw EmbyError.message("Proxy prefix was lost") }
         let asset = AVURLAsset(url: url)
         guard try await asset.load(.isPlayable) else { throw EmbyError.message("HTTP video is not playable") }
         let player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
@@ -53,7 +57,10 @@ import CoreVideo
         player.pause()
         let sought = await player.seek(to: CMTime(seconds: 3, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
         guard sought && abs(player.currentTime().seconds - 3) < 0.3 else { throw EmbyError.message("Seeking failed") }
+        await api.report(server, token: "fixture-token", item: item, source: source, session: info.playSessionId, position: 30_000_000, phase: "/Progress")
+        let progress = try JSONSerialization.jsonObject(with: Data(contentsOf: folder.appendingPathComponent("progress.json"))) as! [String: Any]
+        guard progress["PositionTicks"] as? Int == 30_000_000 else { throw EmbyError.message("Progress sync failed") }
         player.replaceCurrentItem(with: nil)
-        print("AVPlaybackSmoke: PASS (generated H.264 MP4, HTTP playback, advancing time, seek)")
+        print("AVPlaybackSmoke: PASS (Emby negotiation, proxy 404 fallback, HTTP playback, advancing time, seek, progress sync)")
     }
 }

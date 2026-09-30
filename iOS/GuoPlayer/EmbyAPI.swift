@@ -5,6 +5,8 @@ struct LoginResult { let userId: String; let token: String; let serverName: Stri
 final class EmbyAPI {
     private let session: URLSession
     private let deviceId: String
+    private let routeLock = NSLock()
+    private var workingRoots: [String: String] = [:]
     init(session: URLSession = .shared) {
         self.session = session
         let defaults = UserDefaults.standard
@@ -12,14 +14,29 @@ final class EmbyAPI {
         else { let value = UUID().uuidString; defaults.set(value, forKey: "GuoPlayerDeviceId"); deviceId = value }
     }
 
-    private func endpoints(_ server: URL, _ path: String, query: [String: String] = [:]) -> [URL] {
+    private func roots(_ server: URL) -> [String] {
         let root = server.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let bases = root.lowercased().hasSuffix("/emby") ? [root] : [root + "/emby", root]
-        return bases.compactMap { base in
+        routeLock.lock(); let known = workingRoots[root]; routeLock.unlock()
+        let defaults = root.lowercased().hasSuffix("/emby") ? [root, String(root.dropLast(5))] : [root + "/emby", root]
+        return ([known].compactMap { $0 } + defaults).reduce(into: []) { result, value in if !result.contains(value) { result.append(value) } }
+    }
+    private func remember(_ base: URL, target: URL, path: String) {
+        guard var components = URLComponents(url: target, resolvingAgainstBaseURL: false) else { return }
+        components.path = String(components.path.dropLast(path.count + 1)); components.queryItems = nil
+        guard let value = components.string else { return }
+        let key = base.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        routeLock.lock(); workingRoots[key] = value; routeLock.unlock()
+    }
+    private func endpoints(_ server: URL, _ path: String, query: [String: String] = [:]) -> [URL] {
+        roots(server).compactMap { base in
             var components = URLComponents(string: base + "/" + path)
             components?.queryItems = query.isEmpty ? nil : query.map { URLQueryItem(name: $0.key, value: $0.value) }
             return components?.url
         }
+    }
+    private func sameOrigin(_ a: URL, _ b: URL) -> Bool {
+        a.scheme?.lowercased() == b.scheme?.lowercased() && a.host?.lowercased() == b.host?.lowercased()
+            && (a.port ?? (a.scheme == "https" ? 443 : 80)) == (b.port ?? (b.scheme == "https" ? 443 : 80))
     }
     func url(_ server: EmbyServer, _ path: String, query: [String: String] = [:]) -> URL {
         endpoints(server.baseURL, path, query: query)[0]
@@ -40,7 +57,7 @@ final class EmbyAPI {
             do {
                 let (data, response) = try await session.data(for: req)
                 guard let status = (response as? HTTPURLResponse)?.statusCode else { throw EmbyError.message("服务器无有效 HTTP 响应") }
-                if (200..<300).contains(status) { return data }
+                if (200..<300).contains(status) { remember(base, target: target, path: path); return data }
                 if status == 401 { throw EmbyError.message("登录已过期，请重新登录") }
                 lastError = EmbyError.message("Emby HTTP \(status)")
                 if status != 404 { throw lastError }
@@ -100,8 +117,7 @@ final class EmbyAPI {
         return url(server, "Items/\(item.id)/Images/" + (backdrop ? "Backdrop/0" : "Primary"), query: ["maxWidth": backdrop ? "1400" : "450", "api_key": token])
     }
     private func playbackURL(_ server: EmbyServer, value: String, token: String, audio: Int?, subtitle: Int?) -> URL? {
-        let root = server.baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let apiRoot = root.lowercased().hasSuffix("/emby") ? root : root + "/emby"
+        let apiRoot = roots(server.baseURL)[0]
         let raw: String
         if let absolute = URL(string: value), absolute.scheme != nil { raw = value }
         else if value.hasPrefix("/") {
@@ -111,18 +127,20 @@ final class EmbyAPI {
             raw = origin + value
         } else { raw = apiRoot + "/" + value }
         guard var components = URLComponents(string: raw) else { return nil }
+        if let target = components.url, !sameOrigin(target, server.baseURL) { return target }
         var query = components.queryItems ?? []
-        if !query.contains(where: { $0.name.lowercased() == "api_key" }) { query.append(URLQueryItem(name: "api_key", value: token)) }
+        if let target = components.url, sameOrigin(target, server.baseURL), !query.contains(where: { ["api_key", "x-emby-token"].contains($0.name.lowercased()) }) { query.append(URLQueryItem(name: "api_key", value: token)) }
         if let audio { query.removeAll { $0.name == "AudioStreamIndex" }; query.append(URLQueryItem(name: "AudioStreamIndex", value: "\(audio)")) }
         if let subtitle { query.removeAll { $0.name == "SubtitleStreamIndex" }; query.append(URLQueryItem(name: "SubtitleStreamIndex", value: "\(subtitle)")) }
         components.queryItems = query
         return components.url
     }
     func streamURL(_ server: EmbyServer, token: String, item: MediaItem, source: PlaybackSource, forceTranscode: Bool, audio: Int? = nil, subtitle: Int? = nil, sessionId: String? = nil, preferServerTranscodingURL: Bool = true) -> URL {
-        if !forceTranscode && !source.canDirectPlayOnApple && source.canDirectStreamOnApple,
+        if !forceTranscode,
            let value = source.directStreamUrl {
             if let resolved = playbackURL(server, value: value, token: token, audio: audio, subtitle: subtitle) { return resolved }
         }
+        if !forceTranscode, source.canDirectPlayOnApple, let remote = source.remoteHTTPURL { return remote }
         if forceTranscode && preferServerTranscodingURL, let value = source.transcodingUrl,
            let resolved = playbackURL(server, value: value, token: token, audio: audio, subtitle: subtitle) {
             return resolved
@@ -144,17 +162,49 @@ final class EmbyAPI {
                                 audio: audio, subtitle: subtitle, sessionId: sessionId,
                                 preferServerTranscodingURL: preferServerTranscodingURL)
         var candidates = [primary]
-        guard primary.host?.lowercased() == server.baseURL.host?.lowercased(),
-              var alternative = URLComponents(url: primary, resolvingAgainstBaseURL: false) else { return candidates }
-        var path = alternative.percentEncodedPath
-        if let range = path.range(of: "/emby/Videos/", options: .caseInsensitive) {
-            path.replaceSubrange(range, with: "/Videos/")
-        } else if let range = path.range(of: "/Videos/", options: .caseInsensitive) {
-            path.replaceSubrange(range, with: "/emby/Videos/")
-        } else { return candidates }
-        alternative.percentEncodedPath = path
-        if let alternateURL = alternative.url, alternateURL != primary { candidates.append(alternateURL) }
+        func append(_ url: URL?) { if let url, !candidates.contains(url) { candidates.append(url) } }
+        // External signed URLs must remain byte-for-byte intact; never add an Emby token.
+        guard sameOrigin(primary, server.baseURL), let original = URLComponents(url: primary, resolvingAgainstBaseURL: false),
+              let videoRange = original.path.range(of: "/Videos/", options: .caseInsensitive) else { return candidates }
+        let suffix = String(original.path[videoRange.lowerBound...])
+        for root in roots(server.baseURL) {
+            guard let base = URLComponents(string: root) else { continue }
+            var components = original
+            components.path = base.path.trimmingCharacters(in: CharacterSet(charactersIn: "/")).isEmpty ? suffix : base.path + suffix
+            append(components.url)
+        }
+        // Some Emby versions expose only stream.{container}; preserve the same root.
+        if !forceTranscode && suffix.hasSuffix("/stream") {
+            for candidate in Array(candidates) {
+                var components = URLComponents(url: candidate, resolvingAgainstBaseURL: false)!
+                let ext = source.container?.lowercased() ?? "mp4"
+                components.path += "." + (ext == "m4v" ? "mp4" : ext)
+                append(components.url)
+            }
+        }
         return candidates
+    }
+    func resolveStreamURL(_ candidates: [URL], headers: [String: String] = [:]) async throws -> URL {
+        var failure = "没有有效的视频地址"
+        for url in candidates {
+            try Task.checkCancellation()
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 12
+            request.setValue("bytes=0-1", forHTTPHeaderField: "Range")
+            request.setValue("GuoPlayer/iOS", forHTTPHeaderField: "User-Agent")
+            headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
+            let response = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<HTTPURLResponse, Error>) in
+                let delegate = StreamHeaderProbe { continuation.resume(with: $0) }
+                let connection = URLSession(configuration: session.configuration, delegate: delegate, delegateQueue: nil)
+                delegate.connection = connection
+                connection.dataTask(with: request).resume()
+            }
+            let type = response.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
+            if [200, 206].contains(response.statusCode) && !type.contains("text/html") && !type.contains("application/json") { return url }
+            if response.statusCode == 401 { throw EmbyError.message("视频地址返回 HTTP 401，请重新登录服务器") }
+            failure = "视频地址返回 HTTP \(response.statusCode)" + (type.contains("text/html") ? "（返回了网页）" : "")
+        }
+        throw EmbyError.message(failure)
     }
     func report(_ server: EmbyServer, token: String, item: MediaItem, source: PlaybackSource, session: String?, position: Int64, phase: String, paused: Bool = false, method: String = "DirectPlay") async {
         var body: [String: Any] = ["ItemId": item.id, "MediaSourceId": source.id, "PositionTicks": position, "IsPaused": paused, "PlayMethod": method]
@@ -163,5 +213,30 @@ final class EmbyAPI {
     }
     func favorite(_ server: EmbyServer, token: String, item: MediaItem, enable: Bool) async throws {
         _ = try await request(server.baseURL, "Users/\(server.userId)/FavoriteItems/\(item.id)", token: token, method: enable ? "POST" : "DELETE")
+    }
+}
+
+// Stop after the HTTP response headers so a Range-ignoring server cannot make
+// the preflight download an entire movie. One continuation, completed once.
+private final class StreamHeaderProbe: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    var connection: URLSession?
+    private let lock = NSLock()
+    private var finished = false
+    private let result: (Result<HTTPURLResponse, Error>) -> Void
+    init(result: @escaping (Result<HTTPURLResponse, Error>) -> Void) { self.result = result }
+    private func finish(_ value: Result<HTTPURLResponse, Error>) {
+        lock.lock()
+        if finished { lock.unlock(); return }
+        finished = true; lock.unlock()
+        result(value)
+        connection?.invalidateAndCancel(); connection = nil
+    }
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        completionHandler(.cancel)
+        if let http = response as? HTTPURLResponse { finish(.success(http)) }
+        else { finish(.failure(EmbyError.message("视频服务器没有有效 HTTP 响应"))) }
+    }
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if let error { finish(.failure(error)) }
     }
 }

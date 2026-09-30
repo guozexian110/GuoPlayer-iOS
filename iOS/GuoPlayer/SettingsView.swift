@@ -48,6 +48,7 @@ struct EditServerView: View {
     @Environment(\.dismiss) private var dismiss
     let server: EmbyServer
     @State private var name: String
+    @State private var port: String
     @State private var address: String
     @State private var username: String
     @State private var password = ""
@@ -56,14 +57,17 @@ struct EditServerView: View {
     init(server: EmbyServer) {
         self.server = server
         _name = State(initialValue: server.name)
-        _address = State(initialValue: server.baseURL.absoluteString)
+        let fields = EmbyServer.addressFields(server.baseURL)
+        _address = State(initialValue: fields.address)
+        _port = State(initialValue: fields.port)
         _username = State(initialValue: server.username)
     }
     var body: some View {
         NavigationStack {
             Form {
                 TextField("显示名称", text: $name)
-                TextField("服务器地址", text: $address).textInputAutocapitalization(.never).autocorrectionDisabled()
+                TextField("服务器地址", text: $address).textInputAutocapitalization(.never).keyboardType(.URL).autocorrectionDisabled()
+                TextField("端口（可选，例如 8096）", text: $port).keyboardType(.numberPad)
                 TextField("用户名", text: $username).textInputAutocapitalization(.never).autocorrectionDisabled()
                 SecureField("重新登录密码（改地址或账户时必填）", text: $password)
                 if let error { Text(error).foregroundStyle(.red) }
@@ -73,7 +77,7 @@ struct EditServerView: View {
     }
     private func save() async {
         busy = true; error = nil
-        do { try await store.updateServer(server, name: name, address: address, username: username, password: password); password = ""; dismiss() }
+        do { try await store.updateServer(server, name: name, address: try EmbyServer.normalize(address, port: port).absoluteString, username: username, password: password); password = ""; dismiss() }
         catch { self.error = error.localizedDescription }
         busy = false
     }
@@ -84,6 +88,7 @@ struct AddServerView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var address = ""
+    @State private var port = ""
     @State private var username = ""
     @State private var password = ""
     @State private var error: String?
@@ -93,7 +98,9 @@ struct AddServerView: View {
             Form {
                 Section("服务器") {
                     TextField("显示名称（可选）", text: $name)
-                    TextField("https://example.com:8920", text: $address).textInputAutocapitalization(.never).keyboardType(.URL).autocorrectionDisabled()
+                    TextField("连接地址，例如 https://example.com", text: $address).textInputAutocapitalization(.never).keyboardType(.URL).autocorrectionDisabled()
+                    TextField("端口（可选，例如 8096）", text: $port).keyboardType(.numberPad)
+                    Text("端口留空时使用地址中已有的端口或 HTTP/HTTPS 默认端口。支持保留 /emby 等子路径。").font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Emby 账户") {
                     TextField("用户名", text: $username).textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -114,7 +121,7 @@ struct AddServerView: View {
     }
     private func submit() async {
         busy = true; error = nil
-        do { try await store.addServer(name: name, address: address, username: username, password: password); password = ""; dismiss() }
+        do { try await store.addServer(name: name, address: try EmbyServer.normalize(address, port: port).absoluteString, username: username, password: password); password = ""; dismiss() }
         catch { self.error = error.localizedDescription }
         busy = false
     }

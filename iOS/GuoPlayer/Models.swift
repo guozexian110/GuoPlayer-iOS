@@ -12,14 +12,30 @@ struct EmbyServer: Codable, Identifiable, Hashable {
     var userId: String
     var username: String
 
-    static func normalize(_ raw: String) throws -> URL {
-        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        guard let url = URL(string: text), ["http", "https"].contains(url.scheme?.lowercased() ?? ""),
-              url.host != nil, url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else {
+    static func normalize(_ raw: String, port: String = "") throws -> URL {
+        var text = raw.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        if !text.contains("://") { text = "http://" + text }
+        guard var components = URLComponents(string: text), ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
+              components.host?.isEmpty == false, components.user == nil, components.password == nil,
+              components.query == nil, components.fragment == nil else {
             throw EmbyError.message("请输入有效的 HTTP 或 HTTPS 服务器地址")
         }
+        let value = port.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !value.isEmpty {
+            guard let number = Int(value), (1...65535).contains(number), value.allSatisfy({ $0.isNumber }) else { throw EmbyError.message("端口必须是 1–65535 之间的整数") }
+            components.port = number
+        }
+        if let number = components.port, !(1...65535).contains(number) { throw EmbyError.message("端口必须是 1–65535 之间的整数") }
+        guard let url = components.url else { throw EmbyError.message("服务器地址无效") }
         return url
     }
+    static func addressFields(_ url: URL) -> (address: String, port: String) {
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
+        let port = components.port.map(String.init) ?? ""
+        components.port = nil
+        return (components.string ?? url.absoluteString, port)
+    }
+
 }
 
 struct MediaItem: Decodable, Identifiable, Hashable {
@@ -145,12 +161,14 @@ struct PlaybackSource: Decodable, Identifiable {
     let container: String?
     let supportsDirectPlay: Bool?
     let supportsDirectStream: Bool?
+    let path: String?
+    let requiredHttpHeaders: [String: String]?
     let directStreamUrl: String?
     let transcodingUrl: String?
     let mediaStreams: [MediaStream]
     let size: Int64?
     let bitrate: Int?
-    enum CodingKeys: String, CodingKey { case id = "Id", container = "Container", supportsDirectPlay = "SupportsDirectPlay", supportsDirectStream = "SupportsDirectStream", directStreamUrl = "DirectStreamUrl", transcodingUrl = "TranscodingUrl", mediaStreams = "MediaStreams", size = "Size", bitrate = "Bitrate" }
+    enum CodingKeys: String, CodingKey { case id = "Id", container = "Container", supportsDirectPlay = "SupportsDirectPlay", supportsDirectStream = "SupportsDirectStream", path = "Path", requiredHttpHeaders = "RequiredHttpHeaders", directStreamUrl = "DirectStreamUrl", transcodingUrl = "TranscodingUrl", mediaStreams = "MediaStreams", size = "Size", bitrate = "Bitrate" }
     var resolutionLabel: String {
         let height = mediaStreams.first { $0.type == "Video" }?.height ?? 0
         if height >= 2000 { return "4K" }
@@ -159,8 +177,11 @@ struct PlaybackSource: Decodable, Identifiable {
         return container?.uppercased() ?? "视频"
     }
     var canDirectStreamOnApple: Bool {
-        guard supportsDirectStream == true, let value = directStreamUrl?.lowercased() else { return false }
-        return value.contains(".m3u8") || value.contains(".mp4") || value.contains(".mov")
+        supportsDirectStream == true && directStreamUrl?.isEmpty == false
+    }
+    var remoteHTTPURL: URL? {
+        guard let path, let url = URL(string: path), ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { return nil }
+        return url
     }
     var canDirectPlayOnApple: Bool {
         guard supportsDirectPlay == true, ["mp4", "m4v", "mov"].contains(container?.lowercased() ?? "") else { return false }

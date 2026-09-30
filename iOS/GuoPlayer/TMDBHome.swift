@@ -6,205 +6,290 @@ private let homeAccent = Color(red: 0.15, green: 0.84, blue: 0.91)
 struct TMDBDiscoverHome: View {
     @EnvironmentObject private var store: AppStore
     @EnvironmentObject private var chrome: AppChrome
+    @AppStorage("homeModuleOrder") private var moduleOrder = HomeLayoutEditor.defaultOrder
+    @AppStorage("homeHiddenModules") private var hiddenModules = ""
+    @AppStorage("homeHeroSource") private var heroSource = "movie"
+    @AppStorage("homeDaySource") private var daySource = "day"
+    @AppStorage("homeWeekSource") private var weekSource = "week"
+    @AppStorage("homeDayTitle") private var dayTitle = "今日趋势"
+    @AppStorage("homeWeekTitle") private var weekTitle = "本周趋势"
     @State private var heroIndex = 0
-    private let columns = [GridItem(.adaptive(minimum: 290), spacing: 14)]
+    @State private var editing = false
+    private var modules: [String] { moduleOrder.split(separator: ",").map(String.init).filter { !hiddenModules.split(separator: ",").contains(Substring($0)) } }
+    private var heroes: [TMDBTitle] { Array((store.tmdbLists[heroSource] ?? []).prefix(8)) }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                header
-                if !store.hasTMDBCredential {
-                    ContentUnavailableView("个人 TMDb 数据", systemImage: "sparkles.tv",
-                                           description: Text("如需使用个人 TMDb 凭据，请在设置中自行配置。"))
-                } else {
-                    if store.tmdbLoading && store.tmdbLists.isEmpty {
-                        ProgressView("正在读取 TMDb").frame(maxWidth: .infinity, minHeight: 240)
-                    }
-                    if let error = store.tmdbError {
-                        Text(error).font(.caption).foregroundStyle(.orange).padding(.horizontal, 18)
-                    }
-                    if let heroes = store.tmdbLists["movie"], !heroes.isEmpty {
-                        TabView(selection: $heroIndex) {
-                            ForEach(Array(heroes.prefix(6).enumerated()), id: \.element.id) { index, title in
-                                heroCard(title).tag(index)
-                            }
-                        }.tabViewStyle(.page(indexDisplayMode: .always)).frame(height: 350)
-                    }
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.clockwise").foregroundStyle(homeAccent)
-                        Text("每次打开 App 时更新 · 影视资料来自 TMDb")
-                    }.font(.caption2).foregroundStyle(.secondary).padding(.horizontal, 18)
-                    trendRail("今日趋势", key: "day")
-                    trendRail("本周趋势", key: "week")
-                    featureCards
-                    posterRail("正在热映", key: "now")
-                    posterRail("今日动漫", key: "anime")
-                    tileRail("播出平台", tiles: [("Netflix", "netflix"), ("Disney+", "disney"), ("Apple TV+", "apple")])
-                    tileRail("分类浏览", tiles: [("最新电影", "movie"), ("动画", "animation"), ("儿童与家庭", "family"), ("热门剧集", "tv")])
-                    tileRail("电影公司", tiles: [("Universal", "universal"), ("Paramount", "paramount"), ("Columbia", "columbia"), ("Marvel", "marvel")])
-                    HStack(alignment: .top, spacing: 12) {
-                        ranking("高分剧集", key: "topTV")
-                        ranking("高分电影", key: "topMovie")
-                    }.padding(.horizontal, 16)
+        GeometryReader { geometry in
+            let heroHeight = min(max(geometry.size.width * 1.38, 470), 690)
+            ScrollView {
+                VStack(spacing: 0) {
+                    carousel(height: heroHeight)
+                    if let error = store.tmdbError { Text(error).font(.caption).foregroundStyle(.orange).padding(18) }
+                    LazyVStack(alignment: .leading, spacing: 25) {
+                        ForEach(modules, id: \.self) { module in section(module) }
+                        Button { editing = true } label: { Label("编辑首页", systemImage: "slider.horizontal.3").frame(maxWidth: .infinity).padding(14) }
+                            .buttonStyle(.bordered).padding(.horizontal, 18)
+                        Text("影视资料来自 TMDb · 播放片源来自你的 Emby")
+                            .font(.caption2).foregroundStyle(.secondary).frame(maxWidth: .infinity)
+                    }.padding(.top, 20).padding(.bottom, 30).frame(maxWidth: 1100).frame(maxWidth: .infinity)
                 }
+            }.ignoresSafeArea(edges: .top)
+                .background {
+                    ZStack {
+                        homeBackground
+                        if let first = heroes.first { TMDBImage(url: first.backdropURL).blur(radius: 80).opacity(0.18) }
+                    }.ignoresSafeArea()
+                }
+                .overlay(alignment: .topTrailing) {
+                    Button { editing = true } label: { Image(systemName: "slider.horizontal.3").padding(11).background(.ultraThinMaterial, in: Circle()) }
+                        .padding(.trailing, 18).padding(.top, 6).accessibilityLabel("编辑首页")
+                }
+        }.toolbar(.hidden, for: .navigationBar)
+            .refreshable { await store.refreshTMDB(); await store.refresh() }
+            .sheet(isPresented: $editing) { NavigationStack { HomeLayoutEditor() }.presentationDetents([.large]) }
+    }
+
+    private func carousel(height: CGFloat) -> some View {
+        ZStack(alignment: .bottom) {
+            if heroes.isEmpty {
+                ProgressView("正在更新影视资料").frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                TabView(selection: $heroIndex) {
+                    ForEach(Array(heroes.enumerated()), id: \.element.id) { index, title in
+                        NavigationLink { TMDBTitleDetail(title: title) } label: {
+                            ZStack(alignment: .bottom) {
+                                TMDBImage(url: title.backdropURL).frame(height: height).clipped()
+                                LinearGradient(colors: [.clear, .black.opacity(0.08), homeBackground.opacity(0.95)], startPoint: .center, endPoint: .bottom)
+                                VStack(spacing: 8) {
+                                    Text(title.displayTitle).font(.system(size: 34, weight: .bold)).lineLimit(2)
+                                    Text(title.metadata).font(.caption).foregroundStyle(.white.opacity(0.8))
+                                    Text(title.overview ?? "").font(.caption).lineLimit(2).foregroundStyle(.white.opacity(0.75))
+                                    if let rating = title.voteAverage { Label(rating.formatted(.number.precision(.fractionLength(1))), systemImage: "star.fill").font(.caption.bold()).foregroundStyle(homeAccent) }
+                                }.multilineTextAlignment(.center).padding(.horizontal, 28).padding(.bottom, 34)
+                            }
+                        }.buttonStyle(.plain).tag(index)
+                    }
+                }.tabViewStyle(.page(indexDisplayMode: .never))
+                HStack(spacing: 6) {
+                    ForEach(heroes.indices, id: \.self) { index in
+                        Circle().fill(index == heroIndex ? .white : .white.opacity(0.35)).frame(width: 5, height: 5)
+                    }
+                }.padding(.bottom, 14)
             }
-            .padding(.top, 14)
-            .padding(.bottom, 38)
-            .frame(maxWidth: 1100)
-            .frame(maxWidth: .infinity)
+        }.frame(height: height)
+        .onChange(of: heroSource) { _, _ in heroIndex = 0 }
+    }
+
+    @ViewBuilder private func section(_ module: String) -> some View {
+        switch module {
+        case "resume": WideMediaRail(title: "继续观看", groups: store.resumeGroups, showsProgress: true)
+        case "day": wideRail(dayTitle, key: daySource)
+        case "week": wideRail(weekTitle, key: weekSource)
+        case "popular": popularCard
+        case "now": posterRail("正在热映", key: "now")
+        case "anime": posterRail("今日动漫", key: "anime")
+        case "providers": tileRail("播出平台", tiles: [("Netflix", "netflix"), ("Disney+", "disney"), ("Apple TV+", "apple"), ("Max", "max"), ("Hulu", "hulu"), ("Prime Video", "prime"), ("Paramount+", "paramountPlus")])
+        case "genres": categoryRail
+        case "companies": tileRail("电影公司", tiles: [("Universal", "universal"), ("Paramount", "paramount"), ("Columbia", "columbia"), ("Marvel", "marvel")])
+        case "rankings": HStack(alignment: .top, spacing: 12) { ranking("高分剧集", key: "topTV"); ranking("高分电影", key: "topMovie") }.padding(.horizontal, 16)
+        default: EmptyView()
         }
-        .background(homeBackground)
-        .toolbar(.hidden, for: .navigationBar)
-        .refreshable { await store.refreshTMDB(); await store.refresh() }
     }
 
-    private var header: some View {
-        HStack(spacing: 12) {
-            Image("BrandMark").resizable().scaledToFit().frame(width: 36, height: 36)
-                .clipShape(RoundedRectangle(cornerRadius: 9))
-            VStack(alignment: .leading, spacing: 1) {
-                Text("GuoPlayer").font(.headline.bold())
-                Text("发现好内容").font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button { chrome.selectedTab = 2 } label: { Image(systemName: "magnifyingglass").font(.title3) }
-                .accessibilityLabel("搜索 Emby")
-            Button { chrome.showingSettings = true } label: { Image(systemName: "gearshape").font(.title3) }
-                .accessibilityLabel("设置")
-        }.foregroundStyle(.white).padding(.horizontal, 18)
+    private func heading(_ label: String, key: String) -> some View {
+        NavigationLink { TMDBCollectionView(title: label, titles: store.tmdbLists[key] ?? []) } label: {
+            HStack { Text(label).font(.headline); Spacer(); Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary) }
+                .padding(.horizontal, 18)
+        }.buttonStyle(.plain)
     }
-
-    private func heroCard(_ title: TMDBTitle) -> some View {
-        NavigationLink { TMDBTitleDetail(title: title) } label: {
-            ZStack(alignment: .bottomLeading) {
-                TMDBImage(url: title.backdropURL)
-                    .frame(height: 330).frame(maxWidth: .infinity).clipped()
-                LinearGradient(colors: [.clear, .black.opacity(0.92)], startPoint: .center, endPoint: .bottom)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("GUOPLAYER · 今日精选").font(.caption.bold()).tracking(2).foregroundStyle(homeAccent)
-                    Text(title.displayTitle).font(.system(size: 29, weight: .bold)).lineLimit(2)
-                    Text("\(title.year) · \(title.kind == "movie" ? "电影" : "剧集") · TMDb")
-                        .font(.caption).foregroundStyle(.white.opacity(0.75))
-                }.padding(19)
-            }.clipShape(RoundedRectangle(cornerRadius: 19))
-        }.buttonStyle(.plain).padding(.horizontal, 16)
-    }
-
-    private func trendRail(_ label: String, key: String) -> some View {
+    private func wideRail(_ label: String, key: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(label).font(.title2.bold()).padding(.horizontal, 18)
+            heading(label, key: key)
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 12) {
+                LazyHStack(alignment: .top, spacing: 12) {
+                    ForEach(Array((store.tmdbLists[key] ?? []).prefix(20))) { title in
+                        NavigationLink { TMDBTitleDetail(title: title) } label: { wideTitle(title, width: 230) }.buttonStyle(.plain)
+                    }
+                }.padding(.horizontal, 18)
+            }
+        }
+    }
+    private func wideTitle(_ title: TMDBTitle, width: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            TMDBImage(url: title.backdropURL).frame(width: width, height: width * 0.5625).clipShape(RoundedRectangle(cornerRadius: 12))
+            Text(title.displayTitle).font(.subheadline).lineLimit(1)
+            Text(title.metadata).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+        }.frame(width: width, alignment: .leading)
+    }
+    private var popularCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let title = store.tmdbLists["movie"]?.first {
+                NavigationLink { TMDBCollectionView(title: "热门电影", titles: store.tmdbLists["movie"] ?? []) } label: {
+                    ZStack(alignment: .bottomLeading) {
+                        TMDBImage(url: title.backdropURL).frame(height: 250).clipped()
+                        LinearGradient(colors: [.clear, .black.opacity(0.65)], startPoint: .center, endPoint: .bottom)
+                        HStack { Image(systemName: "sparkles"); Text("热门电影"); Spacer(); Image(systemName: "chevron.right") }.font(.title2.bold()).padding(20)
+                    }.clipShape(RoundedRectangle(cornerRadius: 18))
+                }.buttonStyle(.plain)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 12) {
+                        ForEach(Array((store.tmdbLists["movie"] ?? []).prefix(8))) { title in
+                            NavigationLink { TMDBTitleDetail(title: title) } label: { wideTitle(title, width: 160) }.buttonStyle(.plain)
+                        }
+                    }.padding(.horizontal, 12)
+                }.padding(.bottom, 12)
+            }
+        }.background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 20)).padding(.horizontal, 16)
+    }
+    private func posterRail(_ label: String, key: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            heading(label, key: key)
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(alignment: .top, spacing: 11) {
                     ForEach(Array((store.tmdbLists[key] ?? []).prefix(20))) { title in
                         NavigationLink { TMDBTitleDetail(title: title) } label: {
-                            VStack(alignment: .leading, spacing: 6) {
-                                TMDBImage(url: title.backdropURL).frame(width: 240, height: 135)
-                                    .clipShape(RoundedRectangle(cornerRadius: 15))
-                                Text(title.displayTitle).font(.subheadline).lineLimit(1)
-                                Text("\(title.year) · \(title.kind == "movie" ? "电影" : "剧集")")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }.frame(width: 240, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 5) {
+                                TMDBImage(url: title.imageURL).frame(width: 125, height: 183).clipShape(RoundedRectangle(cornerRadius: 12))
+                                Text(title.displayTitle).font(.caption).lineLimit(1)
+                                Text(title.year).font(.caption2).foregroundStyle(.secondary)
+                            }.frame(width: 125, alignment: .leading)
                         }.buttonStyle(.plain)
                     }
                 }.padding(.horizontal, 18)
             }
         }
     }
-
-    private var featureCards: some View {
-        LazyVGrid(columns: columns, spacing: 14) {
-            feature("热门电影", key: "movie")
-            feature("备受欢迎 · 剧集", key: "tv")
-        }.padding(.horizontal, 16)
-    }
-    private func feature(_ label: String, key: String) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if let first = store.tmdbLists[key]?.first {
-                NavigationLink { TMDBTitleDetail(title: first) } label: {
-                    ZStack(alignment: .bottomLeading) {
-                        TMDBImage(url: first.backdropURL).frame(height: 165).clipped()
-                        LinearGradient(colors: [.clear, .black.opacity(0.8)], startPoint: .center, endPoint: .bottom)
-                        Text(label).font(.title2.bold()).padding(14)
-                    }.clipShape(RoundedRectangle(cornerRadius: 13))
-                }.buttonStyle(.plain)
-            }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 9) {
-                    ForEach(Array((store.tmdbLists[key] ?? []).dropFirst().prefix(6))) { title in
-                        NavigationLink { TMDBTitleDetail(title: title) } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                TMDBImage(url: title.backdropURL).frame(width: 126, height: 72).clipped().clipShape(RoundedRectangle(cornerRadius: 8))
-                                Text(title.displayTitle).font(.caption).lineLimit(1).frame(width: 126, alignment: .leading)
-                            }
-                        }.buttonStyle(.plain)
-                    }
-                }
-            }
-        }.padding(12).background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 19))
-    }
-
-    private func posterRail(_ label: String, key: String) -> some View {
-        Group {
-            if let titles = store.tmdbLists[key], !titles.isEmpty {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(label).font(.headline).padding(.horizontal, 18)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(alignment: .top, spacing: 11) {
-                            ForEach(Array(titles.prefix(18))) { title in
-                                NavigationLink { TMDBTitleDetail(title: title) } label: { poster(title) }.buttonStyle(.plain)
-                            }
-                        }.padding(.horizontal, 16)
-                    }
-                }
-            }
-        }
-    }
-    private func poster(_ title: TMDBTitle) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            TMDBImage(url: title.imageURL).frame(width: 125, height: 183).clipped().clipShape(RoundedRectangle(cornerRadius: 12))
-            Text(title.displayTitle).font(.caption.weight(.medium)).lineLimit(1).frame(width: 125, alignment: .leading)
-            Text(title.year).font(.caption2).foregroundStyle(.secondary)
-        }.frame(width: 125, alignment: .leading)
-    }
-
     private func tileRail(_ label: String, tiles: [(String, String)]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(label).font(.headline).padding(.horizontal, 18)
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 11) {
+                HStack(spacing: 12) {
                     ForEach(tiles.indices, id: \.self) { index in
-                        let name = tiles[index].0
-                        let key = tiles[index].1
+                        let name = tiles[index].0; let key = tiles[index].1
                         NavigationLink { TMDBCollectionView(title: name, titles: store.tmdbLists[key] ?? []) } label: {
-                            ZStack(alignment: .bottomLeading) {
-                                if let first = store.tmdbLists[key]?.first {
-                                    TMDBImage(url: first.backdropURL).frame(width: 190, height: 92).clipped()
-                                } else { Color.white.opacity(0.07).frame(width: 190, height: 92) }
-                                LinearGradient(colors: [.clear, .black.opacity(0.9)], startPoint: .top, endPoint: .bottom)
-                                Text(name).font(.headline.bold()).padding(11)
-                            }.frame(width: 190, height: 92).clipShape(RoundedRectangle(cornerRadius: 13))
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 15).fill(.white.opacity(0.06))
+                                HStack(spacing: 6) {
+                                    Spacer(minLength: 110)
+                                    ForEach(Array((store.tmdbLists[key] ?? []).prefix(2))) { title in
+                                        TMDBImage(url: title.imageURL).frame(width: 55, height: 100).rotationEffect(.degrees(15))
+                                    }
+                                }.offset(x: 8)
+                                Text(name).font(.system(size: 21, weight: .bold)).frame(maxWidth: .infinity, alignment: .leading).padding(.leading, 15)
+                            }.frame(width: 245, height: 98).clipShape(RoundedRectangle(cornerRadius: 15))
                         }.buttonStyle(.plain)
                     }
-                }.padding(.horizontal, 16)
+                }.padding(.horizontal, 18)
             }
         }
     }
-
-    private func ranking(_ label: String, key: String) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(label).font(.headline).frame(maxWidth: .infinity)
-            ForEach(0..<min(3, store.tmdbLists[key]?.count ?? 0), id: \.self) { index in
-                let title = store.tmdbLists[key]![index]
-                NavigationLink { TMDBTitleDetail(title: title) } label: {
-                    HStack(spacing: 7) {
-                        Text("\(index + 1)").font(.headline.monospacedDigit()).foregroundStyle(homeAccent)
-                        Text(title.displayTitle).font(.caption).lineLimit(1)
-                        Spacer(minLength: 0)
+    private var categoryRail: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("分类浏览").font(.headline).padding(.horizontal, 18)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach([( "最新电影", "movie"), ("动画", "animation"), ("儿童与家庭", "family"), ("热门剧集", "tv"), ("西部", "western"), ("悬疑", "mystery"), ("纪录", "documentary"), ("剧情", "drama")], id: \.1) { label, key in
+                        NavigationLink { TMDBCollectionView(title: label, titles: store.tmdbLists[key] ?? []) } label: {
+                            HStack(spacing: 12) {
+                                TMDBImage(url: store.tmdbLists[key]?.first?.imageURL).frame(width: 32, height: 44).clipShape(RoundedRectangle(cornerRadius: 5))
+                                Text(label).font(.subheadline.bold())
+                            }.frame(width: 160, alignment: .leading).padding(12).background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 13))
+                        }.buttonStyle(.plain)
                     }
-                }.buttonStyle(.plain)
+                }.padding(.horizontal, 18)
             }
-        }.frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading)
-            .padding(14).background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 17))
+        }
+    }
+    private func ranking(_ label: String, key: String) -> some View {
+        NavigationLink { TMDBCollectionView(title: label, titles: store.tmdbLists[key] ?? []) } label: {
+            VStack(spacing: 14) {
+                Text("❧  \(label)  ❧").font(.subheadline.bold())
+                HStack(spacing: 5) {
+                    ForEach(Array((store.tmdbLists[key] ?? []).prefix(3))) { title in
+                        TMDBImage(url: title.imageURL).frame(height: 68).clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array((store.tmdbLists[key] ?? []).prefix(3).enumerated()), id: \.element.id) { index, title in
+                        Text("\(index + 1)  \(title.displayTitle)").font(.caption2).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }.frame(maxWidth: .infinity, alignment: .top).padding(12).background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 17))
+        }.buttonStyle(.plain)
+    }
+}
+
+struct HomeLayoutEditor: View {
+    static let defaultOrder = "resume,day,week,popular,now,anime,providers,genres,companies,rankings"
+    static let labels = ["resume": "继续观看", "day": "今日趋势", "week": "本周趋势", "popular": "热门电影", "now": "正在热映", "anime": "今日动漫", "providers": "播出平台", "genres": "分类浏览", "companies": "电影公司", "rankings": "高分榜"]
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage("homeModuleOrder") private var order = defaultOrder
+    @AppStorage("homeHiddenModules") private var hidden = ""
+    var body: some View {
+        List {
+            Section("轮播内容") { NavigationLink("配置轮播数据来源") { HomeDataSourceEditor(module: "hero") } }
+            Section("长按拖动模块可调整顺序") {
+                ForEach(order.split(separator: ",").map(String.init), id: \.self) { key in
+                    HStack {
+                        Toggle(Self.labels[key] ?? key, isOn: Binding(get: { !hidden.split(separator: ",").contains(Substring(key)) }, set: { visible in
+                            var values = Set(hidden.split(separator: ",").map(String.init)); if visible { values.remove(key) } else { values.insert(key) }; hidden = values.sorted().joined(separator: ",")
+                        }))
+                        if key == "day" || key == "week" { NavigationLink { HomeDataSourceEditor(module: key) } label: { Image(systemName: "slider.horizontal.3") }.labelsHidden() }
+                    }
+                }.onMove { indices, destination in
+                    var values = order.split(separator: ",").map(String.init); values.move(fromOffsets: indices, toOffset: destination); order = values.joined(separator: ",")
+                }
+            }
+            Button("恢复默认布局") { order = Self.defaultOrder; hidden = "" }
+        }.navigationTitle("编辑首页").navigationBarTitleDisplayMode(.inline)
+            .environment(\.editMode, .constant(.active))
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+    }
+}
+
+private struct HomeDataSourceEditor: View {
+    @EnvironmentObject private var store: AppStore
+    @Environment(\.dismiss) private var dismiss
+    let module: String
+    @AppStorage("homeHeroSource") private var heroSource = "movie"
+    @AppStorage("homeDaySource") private var daySource = "day"
+    @AppStorage("homeWeekSource") private var weekSource = "week"
+    @AppStorage("homeDayTitle") private var dayTitle = "今日趋势"
+    @AppStorage("homeWeekTitle") private var weekTitle = "本周趋势"
+    private var source: Binding<String> { module == "hero" ? $heroSource : module == "day" ? $daySource : $weekSource }
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 25) {
+                Text(module == "hero" ? "轮播内容" : module == "day" ? dayTitle : weekTitle).font(.title2.bold())
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(Array((store.tmdbLists[source.wrappedValue] ?? []).prefix(6))) { title in
+                            TMDBImage(url: title.backdropURL).frame(width: 250, height: module == "hero" ? 250 : 141).clipShape(RoundedRectangle(cornerRadius: 18))
+                        }
+                    }
+                }
+                if module != "hero" {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("编辑标题").font(.headline).foregroundStyle(.secondary)
+                        TextField("模块标题", text: module == "day" ? $dayTitle : $weekTitle).padding(18).background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18))
+                    }
+                }
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("数据源").font(.headline).foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("GuoPlayer · TMDb", systemImage: "checkmark.seal.fill").foregroundStyle(homeAccent)
+                        Picker("影视榜单", selection: source) {
+                            Text("今日趋势").tag("day"); Text("本周趋势").tag("week"); Text("热门电影").tag("movie"); Text("热门剧集").tag("tv"); Text("正在热映").tag("now")
+                        }.pickerStyle(.menu)
+                        Text("使用本机配置的个人 TMDb 凭据获取榜单。每次打开 App 时更新。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }.padding(20).frame(maxWidth: .infinity, alignment: .leading).background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
+                }
+            }.padding(20)
+        }.background(homeBackground).navigationTitle("配置数据来源").navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom) {
+                Button("完成") { dismiss() }.font(.headline).frame(maxWidth: .infinity).padding(18).background(.regularMaterial, in: Capsule()).padding(18)
+            }
     }
 }
 
@@ -226,18 +311,42 @@ private struct TMDBCollectionView: View {
     let title: String
     let titles: [TMDBTitle]
     var body: some View {
-        ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 125), spacing: 12)], spacing: 18) {
-                ForEach(titles) { item in
-                    NavigationLink { TMDBTitleDetail(title: item) } label: {
-                        VStack(alignment: .leading) {
-                            TMDBImage(url: item.imageURL).frame(height: 190).clipShape(RoundedRectangle(cornerRadius: 12))
-                            Text(item.displayTitle).font(.caption).lineLimit(1)
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 25) {
+                    Text(title).font(.system(size: 34, weight: .bold)).padding(.top, 16)
+                    if titles.isEmpty { ContentUnavailableView("暂无影视资料", systemImage: "film", description: Text("请刷新首页并检查 TMDb 连接。")) }
+                    else {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(alignment: .top, spacing: 14) {
+                                ForEach(Array(titles.prefix(5))) { item in
+                                    NavigationLink { TMDBTitleDetail(title: item) } label: {
+                                        VStack(spacing: 8) {
+                                            TMDBImage(url: item.backdropURL).frame(width: min(geometry.size.width * 0.83, 600), height: min(geometry.size.width * 0.47, 338)).clipShape(RoundedRectangle(cornerRadius: 15))
+                                            Text(item.displayTitle).font(.headline).lineLimit(1)
+                                            Text(item.metadata).font(.caption).foregroundStyle(.secondary)
+                                        }.frame(width: min(geometry.size.width * 0.83, 600))
+                                    }.buttonStyle(.plain)
+                                }
+                            }.padding(.horizontal, 18)
                         }
-                    }.buttonStyle(.plain)
-                }
-            }.padding(16)
-        }.navigationTitle(title).background(homeBackground)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 100, maximum: 170), spacing: 12)], spacing: 20) {
+                            ForEach(titles) { item in
+                                NavigationLink { TMDBTitleDetail(title: item) } label: {
+                                    VStack(spacing: 5) {
+                                        TMDBImage(url: item.imageURL).aspectRatio(2 / 3, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 11))
+                                        Text(item.displayTitle).font(.caption).lineLimit(1)
+                                        Text(item.year).font(.caption2).foregroundStyle(.secondary)
+                                    }
+                                }.buttonStyle(.plain)
+                            }
+                        }.padding(.horizontal, 18)
+                    }
+                }.padding(.bottom, 30).frame(maxWidth: 1100).frame(maxWidth: .infinity)
+            }.background {
+                ZStack { homeBackground; TMDBImage(url: titles.first?.backdropURL).blur(radius: 80).opacity(0.13) }.ignoresSafeArea()
+            }
+        }.navigationBarTitleDisplayMode(.inline)
     }
 }
 

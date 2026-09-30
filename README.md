@@ -62,3 +62,10 @@ xcodebuild -project iOS/GuoPlayer.xcodeproj -scheme GuoPlayer -configuration Rel
 - 静态播放使用 Emby /Videos/{id}/stream，避免依赖服务器对 stream.{container} 的兼容；播放切换保持进度，取消旧进度任务。
 - PlaybackSmoke 通过模拟 HTTP 测试能力协商、404 API 回退、视频 URL 和进度上报。模拟测试不代表实际 Emby 服务器或 iPhone 已播放成功。
 - 新提供的视频文件在指定位置不可读取，视频页面与动画仍待补充核对。
+
+
+### 1.1.8 (11)
+
+已读取用户提供的桌面录屏并按模块顺序实现沉浸式顶部轮播、继续观看、横向趋势卡片、热门电影大卡、热映和动漫海报、平台拼贴卡片、分类、电影公司和高分榜。分类详情页包含宽幅精选和自适应海报网格。首页编辑支持模块顺序、显示开关、轮播来源与趋势标题/榜单选择，配置保存在本机。播出平台资料来自 TMDb 的美国区域可用性列表，不能当作平台原创名单。
+
+macOS CI 截图使用 --layout-preview 的虚构内容检查排版，仅 Debug 构建有此入口；Release 使用真实 Emby/TMDb 数据，不包含预览内容。播放测试保留 1.1.7 的 HTTP AVPlayer 与 Emby 协议检查。真实用户服务器播放尚待验证。

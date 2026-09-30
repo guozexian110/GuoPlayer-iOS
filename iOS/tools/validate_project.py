@@ -15,8 +15,8 @@ assert plist["CFBundleIdentifier"] == "$(PRODUCT_BUNDLE_IDENTIFIER)"
 assert plist["UILaunchStoryboardName"] == "LaunchScreen"
 assert "com.guoplayer.app" in project
 assert "IPHONEOS_DEPLOYMENT_TARGET = 17.0" in project
-assert "MARKETING_VERSION = 1.1.7" in project
-assert "CURRENT_PROJECT_VERSION = 10" in project
+assert "MARKETING_VERSION = 1.1.8" in project
+assert "CURRENT_PROJECT_VERSION = 11" in project
 assert 'TARGETED_DEVICE_FAMILY = "1,2"' in project
 assert "ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon" in project
 assert "Assets.xcassets" in project and "LaunchScreen.storyboard" in project

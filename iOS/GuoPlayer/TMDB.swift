@@ -22,6 +22,11 @@ struct TMDBTitle: Decodable, Identifiable, Hashable {
     }
     var displayTitle: String { title ?? name ?? "未命名" }
     var year: String { String((releaseDate ?? firstAirDate ?? "").prefix(4)) }
+    var metadata: String {
+        let genres = [28: "动作", 12: "冒险", 16: "动画", 35: "喜剧", 80: "犯罪", 99: "纪录", 18: "剧情", 10751: "家庭", 14: "奇幻", 27: "恐怖", 9648: "悬疑", 10749: "爱情", 878: "科幻", 53: "惊悚", 37: "西部", 10759: "动作冒险", 10765: "科幻奇幻"]
+        let names = (genreIds ?? []).prefix(2).compactMap { genres[$0] }
+        return ([year].filter { !$0.isEmpty } + names).joined(separator: " · ")
+    }
     var kind: String { mediaType ?? (title == nil ? "tv" : "movie") }
     var imageURL: URL? { image(posterPath, size: "w500") }
     var backdropURL: URL? { image(backdropPath ?? posterPath, size: "w1280") }

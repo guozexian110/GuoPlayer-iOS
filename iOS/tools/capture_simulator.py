@@ -28,6 +28,10 @@ for kind in ("iPhone", "iPad"):
         time.sleep(7)
         screenshot = output / f"{kind.lower()}-discover.png"
         subprocess.run(["xcrun", "simctl", "io", udid, "screenshot", str(screenshot)], check=True, timeout=90)
+        subprocess.run(["xcrun", "simctl", "terminate", udid, "com.guoplayer.app"], check=False)
+        subprocess.run(["xcrun", "simctl", "launch", udid, "com.guoplayer.app", "--layout-preview"], check=True, timeout=90)
+        time.sleep(4)
+        subprocess.run(["xcrun", "simctl", "io", udid, "screenshot", str(output / f"{kind.lower()}-layout-preview.png")], check=True, timeout=90)
         png = screenshot.read_bytes()
         assert png[:8] == b"\x89PNG\r\n\x1a\n"
         width, height = struct.unpack(">II", png[16:24])

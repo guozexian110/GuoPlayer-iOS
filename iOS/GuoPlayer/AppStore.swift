@@ -65,9 +65,17 @@ enum TokenVault {
             ("topMovie", "/movie/top_rated", []), ("topTV", "/tv/top_rated", []),
             ("family", "/discover/movie", [URLQueryItem(name: "with_genres", value: "10751"), URLQueryItem(name: "sort_by", value: "popularity.desc")]),
             ("animation", "/discover/movie", [URLQueryItem(name: "with_genres", value: "16"), URLQueryItem(name: "sort_by", value: "popularity.desc")]),
-            ("netflix", "/discover/movie", [URLQueryItem(name: "with_watch_providers", value: "8"), URLQueryItem(name: "watch_region", value: "US")]),
-            ("disney", "/discover/movie", [URLQueryItem(name: "with_watch_providers", value: "337"), URLQueryItem(name: "watch_region", value: "US")]),
-            ("apple", "/discover/movie", [URLQueryItem(name: "with_watch_providers", value: "350"), URLQueryItem(name: "watch_region", value: "US")]),
+            ("netflix", "/discover/tv", [URLQueryItem(name: "with_watch_providers", value: "8"), URLQueryItem(name: "watch_region", value: "US")]),
+            ("disney", "/discover/tv", [URLQueryItem(name: "with_watch_providers", value: "337"), URLQueryItem(name: "watch_region", value: "US")]),
+            ("apple", "/discover/tv", [URLQueryItem(name: "with_watch_providers", value: "350"), URLQueryItem(name: "watch_region", value: "US")]),
+            ("max", "/discover/tv", [URLQueryItem(name: "with_watch_providers", value: "189"), URLQueryItem(name: "watch_region", value: "US")]),
+            ("hulu", "/discover/tv", [URLQueryItem(name: "with_watch_providers", value: "15"), URLQueryItem(name: "watch_region", value: "US")]),
+            ("prime", "/discover/tv", [URLQueryItem(name: "with_watch_providers", value: "9"), URLQueryItem(name: "watch_region", value: "US")]),
+            ("paramountPlus", "/discover/tv", [URLQueryItem(name: "with_watch_providers", value: "531"), URLQueryItem(name: "watch_region", value: "US")]),
+            ("western", "/discover/movie", [URLQueryItem(name: "with_genres", value: "37")]),
+            ("mystery", "/discover/movie", [URLQueryItem(name: "with_genres", value: "9648")]),
+            ("documentary", "/discover/movie", [URLQueryItem(name: "with_genres", value: "99")]),
+            ("drama", "/discover/movie", [URLQueryItem(name: "with_genres", value: "18")]),
             ("universal", "/discover/movie", [URLQueryItem(name: "with_companies", value: "33")]),
             ("paramount", "/discover/movie", [URLQueryItem(name: "with_companies", value: "4")]),
             ("columbia", "/discover/movie", [URLQueryItem(name: "with_companies", value: "5")]),
@@ -100,6 +108,19 @@ enum TokenVault {
     }
 
     init() {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--layout-preview") {
+            let names = ["远方的海", "夏日来信", "星际旅程", "森林奇遇", "城市之光", "未完的故事", "漫长假日", "月下航行"]
+            let titles = names.enumerated().compactMap { index, name -> TMDBTitle? in
+                let json: [String: Any] = ["id": index + 1, "title": name, "release_date": "2026-09-30", "overview": "GuoPlayer 布局预览使用的虚构内容，用于检查轮播、卡片与网格的尺寸。", "vote_average": 8.1, "genre_ids": [18, 12]]
+                guard let data = try? JSONSerialization.data(withJSONObject: json) else { return nil }
+                return try? JSONDecoder().decode(TMDBTitle.self, from: data)
+            }
+            for key in ["movie", "day", "week", "now", "anime", "topMovie", "topTV", "netflix", "disney", "apple", "max", "hulu", "prime", "paramountPlus", "animation", "family", "tv", "western", "mystery", "documentary", "drama", "universal", "paramount", "columbia", "marvel"] { tmdbLists[key] = titles }
+            hasTMDBCredential = true
+            return
+        }
+        #endif
         if let data = UserDefaults.standard.data(forKey: key), let stored = try? JSONDecoder().decode([EmbyServer].self, from: data) { servers = stored }
         if let cache = try? Data(contentsOf: cacheURL), let stored = try? JSONDecoder().decode([CachedItem].self, from: cache) {
             items = stored.compactMap { $0.decode() }

@@ -8,6 +8,7 @@ struct ServerSettingsView: View {
     @State private var editing: EmbyServer?
     var body: some View {
         List {
+            Section("首页") { NavigationLink("布局与数据来源") { HomeLayoutEditor() } }
             Section("个人 TMDb 发现内容") {
                 Text("可选。个人凭据只用于自己的设备；不填写时发现首页自动展示已连接的 Emby 内容。")
                     .font(.caption).foregroundStyle(.secondary)
@@ -100,10 +101,15 @@ struct AddServerView: View {
                 }
                 if let error { Text(error).foregroundStyle(.red) }
                 Button { Task { await submit() } } label: { if busy { ProgressView() } else { Text("连接并登录") } }
-                    .disabled(busy || address.isEmpty || username.isEmpty || password.isEmpty)
+                    .disabled(busy || address.isEmpty || username.isEmpty)
             }
-            .navigationTitle("添加服务器")
-            .toolbar { Button("取消") { dismiss() } }
+            .navigationTitle("添加媒体库").navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(busy ? "连接中" : "保存") { Task { await submit() } }.disabled(busy || address.isEmpty || username.isEmpty)
+                }
+            }
         }
     }
     private func submit() async {

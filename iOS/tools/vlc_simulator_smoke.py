@@ -44,14 +44,14 @@ subprocess.run(["xcrun", "simctl", "boot", udid], check=True, timeout=60)
 console = None
 try:
     subprocess.run(["xcrun", "simctl", "bootstatus", udid, "-b"], check=True, timeout=600)
-    subprocess.run(["open", "-a", "Simulator", "--args", "-CurrentDeviceUDID", udid], check=False, timeout=30)
     subprocess.run(["xcrun", "simctl", "install", udid, str(app)], check=True, timeout=180)
+    container = Path(subprocess.check_output(["xcrun", "simctl", "get_app_container", udid, "com.guoplayer.app", "data"], text=True, timeout=180).strip())
+    report = container / "Documents/vlc-smoke.json"
+    print("App installed; data container located before launch", flush=True)
     env = dict(os.environ, SIMCTL_CHILD_GUOPLAYER_VLC_TEST_URL="http://127.0.0.1:18765/fixture.mkv")
     stdout = (output / "app-stdout.log").open("w")
     stderr = (output / "app-stderr.log").open("w")
     console = subprocess.Popen(["xcrun", "simctl", "launch", "--console", udid, "com.guoplayer.app", "--vlc-smoke"], env=env, stdout=stdout, stderr=stderr)
-    container = Path(subprocess.check_output(["xcrun", "simctl", "get_app_container", udid, "com.guoplayer.app", "data"], text=True, timeout=45).strip())
-    report = container / "Documents/vlc-smoke.json"
     for _ in range(180):
         if report.exists(): break
         if console.poll() is not None: break

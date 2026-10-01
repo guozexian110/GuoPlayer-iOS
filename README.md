@@ -81,3 +81,12 @@ macOS CI 截图使用 --layout-preview 的虚构内容检查排版，仅 Debug �
 真实服务器诊断发现原始文件 HTTP 206、HEVC/MKV 搭配 FLAC 或 TrueHD，但用户策略禁止视频及音频转码。旧版 AVPlayer 原片与转码回退均不适用。新版按容器/编码选择 VLC 原片播放；原生格式保留 AVPlayer，失败时先试 VLC，再在服务器确实提供 TranscodingUrl 时回退转码。VLC 音轨及内嵌字幕使用实际播放器 track ID，外挂字幕使用 Emby DeliveryUrl 或字幕下载接口，本地切换，不向服务器要求烧录字幕或转换音轨。支持播放/暂停、续播、拖动、倍速、快进退和剧集自动下一集，沿用 Emby 进度上报。
 
 依赖固定为 VLCKit-SPM 3.6.0，SPM 校验二进制 SHA256，无 Apple Team 或证书。许可及替换/重新链接说明见 iOS/THIRD_PARTY_NOTICES.md。CI 新增 iPhone 模拟器 MKV/HEVC + 双 FLAC 音轨 + SRT 字幕的真实解码、画面输出、音轨/字幕选择、拖动与暂停续播检查；不是只判断 HTTP 200。真实 iPhone 尚待安装后验证，不把模拟器结果当作用户真机播放成功。
+
+
+## 1.2.0 (15) 验证记录（2026-10-01）
+
+- 本机已连接的真实 Emby：禁止音频/视频转码；剧集 MKV/HEVC + FLAC、电影 MKV/HEVC + TrueHD/AC3。仅在内存中使用已保存的加密账户登录，分别用 Windows FFmpeg 解码原始视频 3 秒、72 帧，不修改观看记录、不记录地址或凭据。
+- iPhone SE 第三代、iOS 18.5 模拟器：实际 VLCKit 解码 MKV/HEVC + 双 FLAC 音轨 + SRT。测试记录 decodedVideo=138、decodedAudio=374；音轨、内嵌/外挂字幕选择、拖动至 9.175 秒、1.5 倍速、暂停与续播均通过。截图显示测试画面与字幕，采用自行生成的测试素材。模拟器使用软件解码，真机保留正常解码器选择。
+- 模拟器 Debug、设备 Release、聚合/播放接口/AVPlayer HTTP 测试均通过；设备 IPA 已检查版本、图标、启动资源、嵌入 MobileVLCKit、@executable_path/Frameworks 路径及无签名/描述文件。
+- 构建及测试：https://github.com/guozexian110/GuoPlayer-iOS/actions/runs/36853606198 。下载 Artifacts → GuoPlayer-unsigned-ipa；另有 VLC-playback-test 与 relink-objects。
+- 用户真实 iPhone/iPad 上完整登录/播放/进度同步尚未验证。VLC 路径暂不支持画中画；AVPlayer 路径保留原生画中画。旧版编译通过无法代表这些 MKV 原片可播放。

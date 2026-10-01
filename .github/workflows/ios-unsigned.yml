@@ -74,7 +74,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Verify MKV playback in iPhone simulator
-        timeout-minutes: 12
+        timeout-minutes: 20
         run: |
           brew install ffmpeg
           python3 iOS/tools/vlc_simulator_smoke.py "$RUNNER_TEMP/guoplayer-simulator/Build/Products/Debug-iphonesimulator/GuoPlayer.app" "$RUNNER_TEMP/vlc-playback-test"

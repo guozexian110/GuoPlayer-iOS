@@ -43,7 +43,7 @@ print("Booting dedicated iPhone SE iOS 18.5 simulator", flush=True)
 subprocess.run(["xcrun", "simctl", "boot", udid], check=True, timeout=60)
 console = None
 try:
-    subprocess.run(["xcrun", "simctl", "bootstatus", udid, "-b"], check=True, timeout=180)
+    subprocess.run(["xcrun", "simctl", "bootstatus", udid, "-b"], check=True, timeout=600)
     subprocess.run(["xcrun", "simctl", "install", udid, str(app)], check=True, timeout=180)
     env = dict(os.environ, SIMCTL_CHILD_GUOPLAYER_VLC_TEST_URL="http://127.0.0.1:18765/fixture.mkv")
     stdout = (output / "app-stdout.log").open("w")

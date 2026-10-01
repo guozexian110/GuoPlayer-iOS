@@ -16,8 +16,9 @@ assert plist["UILaunchStoryboardName"] == "LaunchScreen"
 assert "com.guoplayer.app" in project
 assert "IPHONEOS_DEPLOYMENT_TARGET = 17.0" in project
 assert "MARKETING_VERSION = 1.2.0" in project
-assert "CURRENT_PROJECT_VERSION = 13" in project
+assert "CURRENT_PROJECT_VERSION = 14" in project
 assert 'TARGETED_DEVICE_FAMILY = "1,2"' in project
+assert '@executable_path/Frameworks' in project
 assert "ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon" in project
 assert "Assets.xcassets" in project and "LaunchScreen.storyboard" in project
 assert "DEVELOPMENT_TEAM" not in project and "PROVISIONING_PROFILE" not in project

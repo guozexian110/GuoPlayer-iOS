@@ -41,7 +41,7 @@ jobs:
           app = pathlib.Path(sys.argv[1])
           info = plistlib.loads((app / 'Info.plist').read_bytes())
           assert info['CFBundleShortVersionString'] == '1.2.0'
-          assert info['CFBundleVersion'] == '13'
+          assert info['CFBundleVersion'] == '14'
           assert info['UILaunchStoryboardName'] == 'LaunchScreen'
           assert info['UIDeviceFamily'] == [1, 2]
           assert info['CFBundleIcons']['CFBundlePrimaryIcon']['CFBundleIconName'] == 'AppIcon'
@@ -49,6 +49,8 @@ jobs:
           assert (app / 'LaunchScreen.storyboardc').exists()
           print('iPhone/iPad launch screen and app icon: PASS')
           PY
+          test -f "$APP/Frameworks/MobileVLCKit.framework/MobileVLCKit"
+          otool -l "$APP/GuoPlayer" | grep '@executable_path/Frameworks'
           if codesign -dv "$APP" >/dev/null 2>&1; then echo 'Expected an unsigned app' >&2; exit 1; fi
           mkdir -p "$RUNNER_TEMP/guoplayer-ipa/Payload"
           ditto "$APP" "$RUNNER_TEMP/guoplayer-ipa/Payload/GuoPlayer.app"

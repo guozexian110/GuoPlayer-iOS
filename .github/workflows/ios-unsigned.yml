@@ -8,13 +8,14 @@ on:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-15-intel
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode
         run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
           xcode-select -p
           xcodebuild -version
       - name: Validate project and compile for iPhone simulator
@@ -29,21 +30,6 @@ jobs:
           swiftc iOS/GuoPlayer/Models.swift iOS/GuoPlayer/EmbyAPI.swift iOS/Tests/AVPlaybackSmoke.swift -o "$RUNNER_TEMP/av-playback-smoke"
           "$RUNNER_TEMP/av-playback-smoke"
           xcodebuild -project iOS/GuoPlayer.xcodeproj -scheme GuoPlayer -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -clonedSourcePackagesDirPath "$RUNNER_TEMP/guoplayer-packages" -derivedDataPath "$RUNNER_TEMP/guoplayer-simulator" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
-      - name: Verify MKV playback in iPhone simulator
-        timeout-minutes: 12
-        run: |
-          brew install ffmpeg
-          python3 iOS/tools/vlc_simulator_smoke.py "$RUNNER_TEMP/guoplayer-simulator/Build/Products/Debug-iphonesimulator/GuoPlayer.app" "$RUNNER_TEMP/vlc-playback-test"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: GuoPlayer-VLC-playback-test
-          path: |
-            ${{ runner.temp }}/vlc-playback-test/vlc-smoke.json
-            ${{ runner.temp }}/vlc-playback-test/*.png
-            ${{ runner.temp }}/vlc-playback-test/*.log
-            ${{ runner.temp }}/vlc-playback-test/*.ips
-          if-no-files-found: ignore
       - name: Build unsigned iPhone and iPad app
         run: |
           set -euo pipefail
@@ -85,6 +71,21 @@ jobs:
           path: GuoPlayer-unsigned.ipa
           if-no-files-found: error
           retention-days: 30
+      - name: Verify MKV playback in iPhone simulator
+        timeout-minutes: 12
+        run: |
+          brew install ffmpeg
+          python3 iOS/tools/vlc_simulator_smoke.py "$RUNNER_TEMP/guoplayer-simulator/Build/Products/Debug-iphonesimulator/GuoPlayer.app" "$RUNNER_TEMP/vlc-playback-test"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: GuoPlayer-VLC-playback-test
+          path: |
+            ${{ runner.temp }}/vlc-playback-test/vlc-smoke.json
+            ${{ runner.temp }}/vlc-playback-test/*.png
+            ${{ runner.temp }}/vlc-playback-test/*.log
+            ${{ runner.temp }}/vlc-playback-test/*.ips
+          if-no-files-found: ignore
       - name: Capture iPhone and iPad launch screenshots
         continue-on-error: true
         timeout-minutes: 10

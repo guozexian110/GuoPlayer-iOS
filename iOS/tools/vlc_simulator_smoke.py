@@ -34,21 +34,26 @@ class Handler(SimpleHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError): pass
 server = ThreadingHTTPServer(("127.0.0.1", 18765), Handler)
 Thread(target=server.serve_forever, daemon=True).start()
-subprocess.run(["open", "-a", "Simulator"], check=False)
 subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(app)], check=True)
 devices = json.loads(subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "--json"], text=True))["devices"]
-device = next(d for ds in devices.values() for d in ds if d["name"].startswith("iPhone"))
-udid = device["udid"]
-subprocess.run(["xcrun", "simctl", "boot", udid], check=True)
+runtime = next((key for key in devices if key.endswith("iOS-18-5")), None)
+if runtime is None: raise RuntimeError("iOS 18.5 simulator runtime is required for this acceptance test")
+udid = subprocess.check_output(["xcrun", "simctl", "create", "GuoPlayer Playback Check", "com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation", runtime], text=True, timeout=60).strip()
+print("Booting dedicated iPhone SE iOS 18.5 simulator", flush=True)
+subprocess.run(["xcrun", "simctl", "boot", udid], check=True, timeout=60)
+console = None
 try:
     subprocess.run(["xcrun", "simctl", "bootstatus", udid, "-b"], check=True, timeout=180)
-    subprocess.run(["xcrun", "simctl", "install", udid, str(app)], check=True)
+    subprocess.run(["xcrun", "simctl", "install", udid, str(app)], check=True, timeout=180)
     env = dict(os.environ, SIMCTL_CHILD_GUOPLAYER_VLC_TEST_URL="http://127.0.0.1:18765/fixture.mkv")
-    subprocess.run(["xcrun", "simctl", "launch", "--stdout=" + str(output / "app-stdout.log"), "--stderr=" + str(output / "app-stderr.log"), udid, "com.guoplayer.app", "--vlc-smoke"], env=env, check=True, timeout=120)
-    container = Path(subprocess.check_output(["xcrun", "simctl", "get_app_container", udid, "com.guoplayer.app", "data"], text=True).strip())
+    stdout = (output / "app-stdout.log").open("w")
+    stderr = (output / "app-stderr.log").open("w")
+    console = subprocess.Popen(["xcrun", "simctl", "launch", "--console", udid, "com.guoplayer.app", "--vlc-smoke"], env=env, stdout=stdout, stderr=stderr)
+    container = Path(subprocess.check_output(["xcrun", "simctl", "get_app_container", udid, "com.guoplayer.app", "data"], text=True, timeout=45).strip())
     report = container / "Documents/vlc-smoke.json"
     for _ in range(180):
         if report.exists(): break
+        if console.poll() is not None: break
         time.sleep(1)
     subprocess.run(["xcrun", "simctl", "io", udid, "screenshot", str(output / "vlc-mkv-playing.png")], check=False, timeout=45)
     if not report.exists():
@@ -66,5 +71,9 @@ finally:
     import shutil
     for crash in (Path.home() / "Library/Logs/DiagnosticReports").glob("GuoPlayer*"):
         if crash.is_file(): shutil.copy2(crash, output / crash.name)
-    subprocess.run(["xcrun", "simctl", "shutdown", udid], check=False)
+    if console is not None:
+        console.terminate()
+        stdout.close(); stderr.close()
+    try: subprocess.run(["xcrun", "simctl", "shutdown", udid], check=False, timeout=30)
+    except subprocess.TimeoutExpired: pass
     server.shutdown()

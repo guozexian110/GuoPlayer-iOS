@@ -24,6 +24,11 @@ struct VLCTrack: Identifiable {
         stop()
         self.resume = resume; resumed = false; lastHeaders = headers
         let media = VLCMedia(url: url)
+        #if targetEnvironment(simulator)
+        // Simulator has no physical iPhone VideoToolbox decoder.
+        media.addOption(":codec=avcodec")
+        media.addOption(":avcodec-hw=none")
+        #endif
         media.addOption(":network-caching=1500")
         media.addOption(":http-user-agent=GuoPlayer/iOS")
         // Disable verbose libVLC logs: stream URLs can contain access tokens.
@@ -97,9 +102,8 @@ struct VLCVideo: UIViewRepresentable {
         return view
     }
     func updateUIView(_ view: UIView, context: Context) {
-        // Reattaching an active video surface on every published clock tick can
-        // block libVLC's output queue while it is waiting on UIKit.
-        if (playback.player.drawable as? UIView) !== view { playback.player.drawable = view }
+        // libVLC renders into the same UIView for its lifetime. Clock updates
+        // must not query/rebind the output surface while UIKit draws it.
     }
     static func dismantleUIView(_ view: UIView, coordinator: ()) { }
 }
@@ -108,20 +112,21 @@ struct VLCVideo: UIViewRepresentable {
 // Simulator acceptance test uses the same adapter and rendered video surface.
 struct VLCSmokeView: View {
     @StateObject private var playback = VLCPlayback()
+    private func log(_ value: String) { FileHandle.standardError.write(Data((value + "\n").utf8)) }
     var body: some View {
         VLCVideo(playback: playback).ignoresSafeArea().task {
-            print("VLC smoke: task started")
+            log("VLC smoke: task started")
             var result: [String: Any] = [:]
             do {
                 guard let value = ProcessInfo.processInfo.environment["GUOPLAYER_VLC_TEST_URL"], let url = URL(string: value) else { throw EmbyError.message("Missing test URL") }
-                print("VLC smoke: opening fixture")
+                log("VLC smoke: opening fixture")
                 playback.open(url, headers: [:], resume: 0, speed: 1)
-                print("VLC smoke: waiting for frames")
+                log("VLC smoke: waiting for frames")
                 for _ in 0..<160 {
                     try await Task.sleep(for: .milliseconds(250))
                     if playback.position > 2 && (playback.player.media?.statistics.decodedVideo ?? 0) > 5 { break }
                 }
-                print("VLC smoke: decode wait finished")
+                log("VLC smoke: decode wait finished")
                 guard let media = playback.player.media else { throw EmbyError.message("VLC has no media") }
                 let stats = media.statistics
                 result["decodedVideo"] = stats.decodedVideo
@@ -132,22 +137,29 @@ struct VLCSmokeView: View {
                 result["subtitleTracks"] = playback.subtitleTracks.count
                 guard stats.decodedVideo > 5, stats.decodedAudio > 5, stats.displayedPictures > 0, playback.audioTracks.count >= 2, !playback.subtitleTracks.isEmpty else { throw EmbyError.message("Decode or track discovery failed") }
                 let lastAudio = playback.audioTracks.last!.id
+                log("VLC smoke: selecting audio")
                 playback.audio(lastAudio)
                 playback.subtitle(playback.subtitleTracks.first!.id)
                 playback.setRate(1.5)
+                log("VLC smoke: seeking")
                 playback.seek(8)
+                log("VLC smoke: seek issued")
                 try await Task.sleep(for: .seconds(2))
                 result["seekPosition"] = playback.position
                 result["audioSelected"] = playback.player.currentAudioTrackIndex == lastAudio
                 result["subtitleSelected"] = playback.player.currentVideoSubTitleIndex >= 0
                 let external = url.deletingLastPathComponent().appendingPathComponent("fixture.srt")
+                log("VLC smoke: external subtitle")
                 playback.externalSubtitle(external)
+                log("VLC smoke: external subtitle issued")
                 try await Task.sleep(for: .seconds(1))
                 result["externalSubtitleTracks"] = playback.subtitleTracks.count
                 result["externalSubtitleSelected"] = playback.player.currentVideoSubTitleIndex >= 0 && playback.subtitleTracks.count >= 2
+                log("VLC smoke: pause/resume")
                 playback.toggle()
                 try await Task.sleep(for: .seconds(1))
                 result["paused"] = !playback.player.isPlaying
+                log("VLC smoke: pause/resume")
                 playback.toggle()
                 try await Task.sleep(for: .seconds(1))
                 result["resumed"] = playback.player.isPlaying
@@ -157,8 +169,8 @@ struct VLCSmokeView: View {
             let output = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("vlc-smoke.json")
             do {
                 try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: output)
-                print("VLC smoke: report saved")
-            } catch { print("VLC smoke: report serialization failed \(error)") }
+                log("VLC smoke: report saved")
+            } catch { log("VLC smoke: report serialization failed \(error)") }
         }
     }
 }

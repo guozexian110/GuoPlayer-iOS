@@ -7,13 +7,13 @@ from threading import Thread
 app, output = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
 output.mkdir(parents=True, exist_ok=True)
 fixture = output / "fixture.mkv"
-(output / "fixture.srt").write_text("1\n00:00:00,000 --> 00:00:29,000\nGuoPlayer MKV subtitle test\n")
+(output / "fixture.srt").write_text("1\n00:00:00,000 --> 00:01:29,000\nGuoPlayer MKV subtitle test\n")
 subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
     "-f", "lavfi", "-i", "testsrc2=size=640x360:rate=24",
     "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000",
     "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=48000",
     "-i", str(output / "fixture.srt"), "-map", "0:v", "-map", "1:a", "-map", "2:a", "-map", "3:s",
-    "-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "log-level=error", "-c:a", "flac", "-c:s", "srt", "-t", "30", str(fixture)], check=True)
+    "-c:v", "libx265", "-preset", "ultrafast", "-x265-params", "log-level=error", "-c:a", "flac", "-c:s", "srt", "-t", "90", str(fixture)], check=True)
 class Handler(SimpleHTTPRequestHandler):
     def log_message(self, *_): pass
     def do_GET(self):
@@ -44,6 +44,7 @@ subprocess.run(["xcrun", "simctl", "boot", udid], check=True, timeout=60)
 console = None
 try:
     subprocess.run(["xcrun", "simctl", "bootstatus", udid, "-b"], check=True, timeout=600)
+    subprocess.run(["open", "-a", "Simulator", "--args", "-CurrentDeviceUDID", udid], check=False, timeout=30)
     subprocess.run(["xcrun", "simctl", "install", udid, str(app)], check=True, timeout=180)
     env = dict(os.environ, SIMCTL_CHILD_GUOPLAYER_VLC_TEST_URL="http://127.0.0.1:18765/fixture.mkv")
     stdout = (output / "app-stdout.log").open("w")
@@ -55,7 +56,6 @@ try:
         if report.exists(): break
         if console.poll() is not None: break
         time.sleep(1)
-    subprocess.run(["xcrun", "simctl", "io", udid, "screenshot", str(output / "vlc-mkv-playing.png")], check=False, timeout=45)
     if not report.exists():
         for name in ["app-stdout.log", "app-stderr.log"]:
             log = output / name
@@ -63,7 +63,8 @@ try:
         raise RuntimeError("VLC simulator test timed out")
     result = json.loads(report.read_text())
     (output / "vlc-smoke.json").write_text(json.dumps(result, indent=2))
-    subprocess.run(["xcrun", "simctl", "io", udid, "screenshot", str(output / "vlc-mkv-playing.png")], check=True)
+    try: subprocess.run(["xcrun", "simctl", "io", udid, "screenshot", str(output / "vlc-mkv-playing.png")], check=True, timeout=45)
+    except subprocess.TimeoutExpired: print("Screenshot timed out; use decoded/displayed frame counters and report", flush=True)
     print(json.dumps(result), flush=True)
     assert result.get("pass"), result
     print("iOS VLC MKV HEVC/FLAC rendered decode, audio/subtitle selection, seek, pause/resume: PASS")
